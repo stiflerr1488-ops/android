@@ -1,0 +1,703 @@
+package com.example.teamcompass
+
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.location.Location
+import android.os.Bundle
+import android.os.Looper
+import android.text.InputFilter
+import android.text.InputType
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
+import com.google.firebase.database.ValueEventListener
+import kotlin.math.abs
+import kotlin.math.roundToInt
+
+/**
+ * MVP экран:
+ *  - Анонимный логин
+ *  - Вход в команду по 6-значному коду
+ *  - Позывной (сохраняется между перезапусками)
+ *  - Отправка своей позиции в Firebase
+ *  - Список тиммейтов: стрелка/дистанция/last seen
+ */
+class MainActivity : Activity(), SensorEventListener {
+
+    private val prefs by lazy { getSharedPreferences("teamcompass", Context.MODE_PRIVATE) }
+
+    private lateinit var statusView: TextView
+    private lateinit var listContainer: LinearLayout
+    private lateinit var codeEdit: EditText
+    private lateinit var callsignEdit: EditText
+    private lateinit var btnSignIn: Button
+    private lateinit var btnJoin: Button
+    private lateinit var btnCreate: Button
+    private lateinit var btnLeave: Button
+    private lateinit var btnGrantLocation: Button
+
+    private var uid: String? = null
+    private var teamCode: String? = null
+    private var callsign: String = ""
+
+    // Location
+    private val fused by lazy { LocationServices.getFusedLocationProviderClient(this) }
+    private var myLocation: Location? = null
+    private var lastSentLocation: Location? = null
+    private var lastSentAtMs: Long = 0
+
+    // Heading
+    private val sensorManager by lazy { getSystemService(SENSOR_SERVICE) as SensorManager }
+    private var rotationVector: Sensor? = null
+    private var sensorHeadingDeg: Float? = null
+    private var gpsHeadingDeg: Float? = null
+    private var effectiveHeadingDeg: Float? = null
+
+    // Firebase
+    private val db by lazy { FirebaseDatabase.getInstance().reference }
+    private var stateListener: ValueEventListener? = null
+
+    private val locationCallback = object : LocationCallback() {
+        override fun onLocationResult(result: LocationResult) {
+            val loc = result.lastLocation ?: return
+            myLocation = loc
+
+            // GPS bearing is very stable when moving
+            if (loc.hasSpeed() && loc.speed > 1.5f && loc.hasBearing()) {
+                gpsHeadingDeg = normalize360(loc.bearing)
+            }
+
+            effectiveHeadingDeg = chooseEffectiveHeading()
+            maybeSendState(loc)
+            renderTeammatesLastKnown() // update arrows even if teammates unchanged
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // Load saved
+        callsign = prefs.getString("callsign", "") ?: ""
+        teamCode = prefs.getString("teamCode", "")?.takeIf { it.isNotBlank() }
+
+        // UI
+        statusView = TextView(this).apply {
+            textSize = 16f
+            setPadding(24, 24, 24, 24)
+            text = "TeamCompass MVP\n"
+        }
+
+        callsignEdit = EditText(this).apply {
+            hint = "Позывной"
+            setText(callsign)
+        }
+
+        codeEdit = EditText(this).apply {
+            hint = "Код команды (6 цифр)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(InputFilter.LengthFilter(6))
+            setText(teamCode ?: "")
+        }
+
+        btnSignIn = Button(this).apply {
+            text = "1) Войти (анонимно)"
+            setOnClickListener { signIn() }
+        }
+
+        btnJoin = Button(this).apply {
+            text = "2) Зайти в команду"
+            isEnabled = false
+            setOnClickListener { joinTeam() }
+        }
+
+        btnCreate = Button(this).apply {
+            text = "Создать команду (код 6 цифр)"
+            isEnabled = false
+            setOnClickListener { createTeamAndJoin() }
+        }
+
+        btnLeave = Button(this).apply {
+            text = "Выйти из команды"
+            isEnabled = false
+            setOnClickListener { leaveTeam() }
+        }
+
+        btnGrantLocation = Button(this).apply {
+            text = "Разрешить геолокацию"
+            visibility = View.GONE
+            setOnClickListener { requestLocationPermission() }
+        }
+
+        listContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 12, 24, 24)
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 24, 24, 24)
+            addView(btnSignIn)
+            addView(space())
+            addView(callsignEdit)
+            addView(codeEdit)
+            addView(btnJoin)
+            addView(btnCreate)
+            addView(btnLeave)
+            addView(btnGrantLocation)
+            addView(space())
+            addView(statusView)
+            addView(space())
+            addView(TextView(this@MainActivity).apply {
+                text = "Тиммейты (last seen):"
+                textSize = 16f
+                setPadding(0, 8, 0, 8)
+            })
+            addView(listContainer)
+        }
+
+        setContentView(
+            ScrollView(this).apply {
+                addView(
+                    content,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                )
+            }
+        )
+
+        // Sensors
+        rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        if (rotationVector == null) {
+            append("⚠️ Нет датчика компаса (rotation vector). Стрелки будут норм только в движении (по GPS-курсу).\n")
+        }
+
+        // Auto sign-in if possible
+        FirebaseAuth.getInstance().currentUser?.let {
+            uid = it.uid
+            append("✅ Уже авторизован. uid=${it.uid}\n")
+            btnJoin.isEnabled = true
+            btnCreate.isEnabled = true
+        } ?: run {
+            append("Нажми 'Войти (анонимно)'\n")
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // If already in team, resume sensors/location
+        if (!teamCode.isNullOrBlank() && !uid.isNullOrBlank() && btnLeave.isEnabled) {
+            startSensors()
+            startLocationUpdatesIfPermitted()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopSensors()
+        stopLocationUpdates()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopSensors()
+        stopLocationUpdates()
+        detachStateListener()
+    }
+
+    private fun space(): View = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            16
+        )
+    }
+
+    private fun append(msg: String) {
+        statusView.append(msg)
+    }
+
+    private fun signIn() {
+        append("Входим...\n")
+        FirebaseAuth.getInstance().signInAnonymously()
+            .addOnSuccessListener {
+                uid = it.user?.uid
+                append("✅ Вошёл. uid=$uid\n")
+                btnJoin.isEnabled = true
+                btnCreate.isEnabled = true
+            }
+            .addOnFailureListener { e ->
+                append("❌ Ошибка входа: ${e.message}\n")
+            }
+    }
+
+    private fun joinTeam() {
+        val u = uid
+        if (u.isNullOrBlank()) {
+            append("❗ Сначала нажми 'Войти (анонимно)'\n")
+            return
+        }
+
+        val code = codeEdit.text.toString().trim()
+        val cs = callsignEdit.text.toString().trim()
+
+        if (!code.matches(Regex("\\d{6}"))) {
+            append("❗ Код должен быть из 6 цифр (например 012345)\n")
+            return
+        }
+        if (cs.isBlank()) {
+            append("❗ Введи позывной\n")
+            return
+        }
+
+        // Save locally
+        prefs.edit().putString("callsign", cs).putString("teamCode", code).apply()
+        callsign = cs
+        teamCode = code
+
+        append("Подключаемся к команде $code...\n")
+
+        val member = hashMapOf(
+            "callsign" to cs,
+            "joinedAt" to ServerValue.TIMESTAMP
+        )
+
+        db.child("teams").child(code).child("members").child(u)
+            .setValue(member)
+            .addOnSuccessListener {
+                append("✅ В команде $code как '$cs'\n")
+                btnLeave.isEnabled = true
+                startSensors()
+                startLocationUpdatesIfPermitted()
+                attachStateListener(code)
+            }
+            .addOnFailureListener { e ->
+                append("❌ Не удалось войти в команду: ${e.message}\n")
+            }
+    }
+
+    private fun createTeamAndJoin() {
+        val u = uid
+        if (u.isNullOrBlank()) {
+            append("❗ Сначала нажми 'Войти (анонимно)'\n")
+            return
+        }
+
+        val cs = callsignEdit.text.toString().trim()
+        if (cs.isBlank()) {
+            append("❗ Введи позывной (он сохранится)\n")
+            return
+        }
+
+        val code = (0..999999).random().toString().padStart(6, '0')
+        codeEdit.setText(code)
+        append("🆕 Создан код команды: $code (отправь его ребятам)\n")
+
+        // Best-effort meta (не критично, но удобно видеть в базе)
+        db.child("teams").child(code).child("meta").updateChildren(
+            mapOf(
+                "createdAt" to ServerValue.TIMESTAMP,
+                "createdBy" to u
+            )
+        )
+
+        joinTeam()
+    }
+
+    private fun leaveTeam() {
+        stopSensors()
+        stopLocationUpdates()
+        detachStateListener()
+
+        append("\n— Вышел (локально).\n")
+        btnLeave.isEnabled = false
+
+        // На сервере мы членство не удаляем (чтобы случайно не сломать матч).
+        // Если захотите — добавим кнопку "Покинуть" которая удаляет members/{uid}.
+    }
+
+    // -----------------------------
+    // Location
+    // -----------------------------
+
+    private fun hasLocationPermission(): Boolean {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        return fine == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestLocationPermission() {
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+            REQ_LOCATION
+        )
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_LOCATION) {
+            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                btnGrantLocation.visibility = View.GONE
+                append("✅ Геолокация разрешена\n")
+                startLocationUpdatesIfPermitted()
+            } else {
+                append("❌ Без геолокации стрелки/дистанция не будут работать\n")
+            }
+        }
+    }
+
+    private fun startLocationUpdatesIfPermitted() {
+        if (!btnLeave.isEnabled) return // not joined
+
+        if (!hasLocationPermission()) {
+            btnGrantLocation.visibility = View.VISIBLE
+            append("Нужно разрешение на геолокацию\n")
+            return
+        }
+        btnGrantLocation.visibility = View.GONE
+
+        val request = LocationRequest.Builder(
+            Priority.PRIORITY_HIGH_ACCURACY,
+            2000L
+        )
+            .setMinUpdateIntervalMillis(1000L)
+            .setWaitForAccurateLocation(false)
+            .build()
+
+        fused.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+        append("📍 Трекинг включён (пока приложение на экране)\n")
+    }
+
+    private fun stopLocationUpdates() {
+        fused.removeLocationUpdates(locationCallback)
+    }
+
+    private fun maybeSendState(loc: Location) {
+        val u = uid ?: return
+        val code = teamCode ?: return
+        if (!btnLeave.isEnabled) return
+
+        val now = System.currentTimeMillis()
+        val lastLoc = lastSentLocation
+
+        val timeOk = (now - lastSentAtMs) >= SEND_EVERY_MS
+        val distOk = lastLoc == null || loc.distanceTo(lastLoc) >= SEND_DISTANCE_M
+
+        if (!timeOk && !distOk) return
+
+        lastSentAtMs = now
+        lastSentLocation = Location(loc)
+
+        val heading = chooseEffectiveHeading()
+        val payload: MutableMap<String, Any> = hashMapOf(
+            "lat" to loc.latitude,
+            "lon" to loc.longitude,
+            "acc" to loc.accuracy.toDouble(),
+            "speed" to (if (loc.hasSpeed()) loc.speed.toDouble() else 0.0),
+            "heading" to ((heading ?: 0f).toDouble()),
+            "callsign" to callsign,
+            "ts" to ServerValue.TIMESTAMP
+        )
+
+        db.child("teams").child(code).child("state").child(u)
+            .updateChildren(payload)
+            .addOnFailureListener { e ->
+                append("❌ Ошибка отправки state: ${e.message}\n")
+            }
+    }
+
+    // -----------------------------
+    // Sensors (heading)
+    // -----------------------------
+
+    private fun startSensors() {
+        rotationVector?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+        }
+    }
+
+    private fun stopSensors() {
+        sensorManager.unregisterListener(this)
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        if (event.sensor.type != Sensor.TYPE_ROTATION_VECTOR) return
+
+        val rotMat = FloatArray(9)
+        SensorManager.getRotationMatrixFromVector(rotMat, event.values)
+
+        val orientations = FloatArray(3)
+        SensorManager.getOrientation(rotMat, orientations)
+
+        // orientations[0] = azimuth in radians
+        val azimuthRad = orientations[0]
+        var deg = Math.toDegrees(azimuthRad.toDouble()).toFloat()
+        deg = normalize360(deg)
+
+        sensorHeadingDeg = smoothAngle(sensorHeadingDeg, deg, 0.15f)
+        effectiveHeadingDeg = chooseEffectiveHeading()
+        renderTeammatesLastKnown()
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // no-op
+    }
+
+    private fun chooseEffectiveHeading(): Float? {
+        val loc = myLocation
+        val gps = gpsHeadingDeg
+        return if (loc != null && loc.hasSpeed() && loc.speed > 1.5f && gps != null) {
+            gps
+        } else {
+            sensorHeadingDeg
+        }
+    }
+
+    // -----------------------------
+    // Firebase listener + rendering
+    // -----------------------------
+
+    private var lastStatesSnapshot: Map<String, PlayerState> = emptyMap()
+
+    private fun attachStateListener(code: String) {
+        detachStateListener()
+
+        val ref = db.child("teams").child(code).child("state")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val map = mutableMapOf<String, PlayerState>()
+                for (child in snapshot.children) {
+                    val id = child.key ?: continue
+                    val lat = child.child("lat").getValue(Double::class.java)
+                    val lon = child.child("lon").getValue(Double::class.java)
+                    val acc = child.child("acc").getValue(Double::class.java)
+                    val ts = child.child("ts").getValue(Long::class.java)
+                    val cs = child.child("callsign").getValue(String::class.java) ?: ""
+                    if (lat != null && lon != null && acc != null && ts != null) {
+                        map[id] = PlayerState(id, cs, lat, lon, acc, ts)
+                    }
+                }
+                lastStatesSnapshot = map
+                renderTeammatesLastKnown()
+            }
+
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
+                append("❌ Listener cancelled: ${error.message}\n")
+            }
+        }
+
+        ref.addValueEventListener(listener)
+        stateListener = listener
+        append("📡 Слушаем /teams/$code/state\n")
+    }
+
+    private fun detachStateListener() {
+        val code = teamCode ?: return
+        val listener = stateListener ?: return
+        db.child("teams").child(code).child("state").removeEventListener(listener)
+        stateListener = null
+        lastStatesSnapshot = emptyMap()
+        listContainer.removeAllViews()
+    }
+
+    private fun renderTeammatesLastKnown() {
+        if (!btnLeave.isEnabled) return
+
+        val u = uid ?: return
+        val cs = callsign
+
+        val myLoc = myLocation
+        val myHeading = effectiveHeadingDeg
+
+        // We'll also read callsigns (best-effort) - MVP: use uid if no callsign
+        val now = System.currentTimeMillis()
+
+        listContainer.removeAllViews()
+
+        // Add "me" line
+        val meLine = TextView(this).apply {
+            textSize = 15f
+            text = buildString {
+                append("Я: ")
+                append(if (cs.isNotBlank()) cs else u.take(6))
+                if (myLoc != null) {
+                    append(" • acc=")
+                    append(myLoc.accuracy.roundToInt())
+                    append("м")
+                } else {
+                    append(" • ждём GPS...")
+                }
+                if (myHeading != null) {
+                    append(" • heading=")
+                    append(myHeading.roundToInt())
+                    append("°")
+                }
+            }
+        }
+        listContainer.addView(meLine)
+
+        if (lastStatesSnapshot.isEmpty()) {
+            listContainer.addView(TextView(this).apply {
+                text = "(пока нет данных)"
+                setPadding(0, 8, 0, 0)
+            })
+            return
+        }
+
+        if (myLoc == null) {
+            listContainer.addView(TextView(this).apply {
+                text = "Ждём координаты, чтобы считать дистанции..."
+                setPadding(0, 8, 0, 0)
+            })
+            return
+        }
+
+        // Render others
+        val others = lastStatesSnapshot.values
+            .filter { it.uid != u }
+            .sortedBy { it.ageSec(now) }
+
+        for (st in others) {
+            val ageSec = st.ageSec(now)
+            if (ageSec > STALE_HIDE_AFTER_SEC) {
+                // hide fully
+                continue
+            }
+
+            val bearing = bearingDeg(myLoc.latitude, myLoc.longitude, st.lat, st.lon)
+            val distM = distanceMeters(myLoc.latitude, myLoc.longitude, st.lat, st.lon)
+
+            val rel = if (myHeading != null) {
+                normalize180(bearing - myHeading)
+            } else {
+                // No heading available (no compass + not moving). Show bearing from North.
+                bearing
+            }
+
+            val arrow = if (myHeading != null) arrow8(rel) else "N→" // indicate bearing reference
+
+            val staleMark = when {
+                ageSec <= 20 -> ""
+                ageSec <= 60 -> " (сомн)"
+                else -> " (старые)"
+            }
+
+            val accMark = if (st.acc > 50.0) " ⚠️acc" else ""
+
+            val name = (st.callsign.takeIf { it.isNotBlank() } ?: "uid=${st.uid.take(6)}")
+
+            val line = TextView(this).apply {
+                textSize = 15f
+                setPadding(0, 10, 0, 0)
+                text = "$arrow $name • ${distM}м • ${ageSec}с назад$staleMark$accMark"
+            }
+            listContainer.addView(line)
+        }
+
+        if (others.isEmpty()) {
+            listContainer.addView(TextView(this).apply {
+                text = "(тиммейты не присылали точки)"
+                setPadding(0, 8, 0, 0)
+            })
+        }
+    }
+
+    // -----------------------------
+    // Geometry helpers
+    // -----------------------------
+
+    private fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Int {
+        val res = FloatArray(1)
+        Location.distanceBetween(lat1, lon1, lat2, lon2, res)
+        return res[0].roundToInt()
+    }
+
+    private fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+        val a = Location("").apply {
+            latitude = lat1
+            longitude = lon1
+        }
+        val b = Location("").apply {
+            latitude = lat2
+            longitude = lon2
+        }
+        return normalize360(a.bearingTo(b))
+    }
+
+    private fun normalize360(deg: Float): Float {
+        var d = deg % 360f
+        if (d < 0) d += 360f
+        return d
+    }
+
+    private fun normalize180(deg: Float): Float {
+        var d = deg % 360f
+        if (d > 180f) d -= 360f
+        if (d < -180f) d += 360f
+        return d
+    }
+
+    private fun smoothAngle(old: Float?, new: Float, alpha: Float): Float {
+        if (old == null) return new
+        // shortest path around the circle
+        var delta = normalize180(new - old)
+        return normalize360(old + alpha * delta)
+    }
+
+    private fun arrow8(relDeg: Float): String {
+        // relDeg in -180..180: 0 = straight ahead
+        val dirs = arrayOf("↑", "↗", "→", "↘", "↓", "↙", "←", "↖")
+        val angle = normalize360(relDeg)
+        val idx = ((angle / 45f).roundToInt()) % 8
+        return dirs[idx]
+    }
+
+    data class PlayerState(
+        val uid: String,
+        val callsign: String,
+        val lat: Double,
+        val lon: Double,
+        val acc: Double,
+        val ts: Long
+    ) {
+        fun ageSec(nowMs: Long): Long = ((nowMs - ts) / 1000L).coerceAtLeast(0L)
+    }
+
+    companion object {
+        private const val REQ_LOCATION = 1001
+
+        // Send policy (foreground MVP)
+        private const val SEND_EVERY_MS = 3000L
+        private const val SEND_DISTANCE_M = 10f
+
+        // Staleness UI
+        private const val STALE_HIDE_AFTER_SEC = 120L
+    }
+}
