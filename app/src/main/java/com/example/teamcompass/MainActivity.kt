@@ -13,13 +13,10 @@ import android.os.Bundle
 import android.os.Looper
 import android.text.InputFilter
 import android.text.InputType
-import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -100,91 +97,47 @@ class MainActivity : Activity(), SensorEventListener {
         teamCode = prefs.getString("teamCode", "")?.takeIf { it.isNotBlank() }
 
         // UI
-        statusView = TextView(this).apply {
-            textSize = 16f
-            setPadding(24, 24, 24, 24)
+        setContentView(R.layout.activity_main)
+
+        statusView = findViewById<TextView>(R.id.statusView).apply {
             text = "TeamCompass MVP\n"
         }
 
-        callsignEdit = EditText(this).apply {
-            hint = "Позывной"
+        callsignEdit = findViewById<EditText>(R.id.callsignEdit).apply {
             setText(callsign)
         }
 
-        codeEdit = EditText(this).apply {
-            hint = "Код команды (6 цифр)"
+        codeEdit = findViewById<EditText>(R.id.codeEdit).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
             filters = arrayOf(InputFilter.LengthFilter(6))
             setText(teamCode ?: "")
         }
 
-        btnSignIn = Button(this).apply {
-            text = "1) Войти (анонимно)"
+        btnSignIn = findViewById<Button>(R.id.btnSignIn).apply {
             setOnClickListener { signIn() }
         }
 
-        btnJoin = Button(this).apply {
-            text = "2) Зайти в команду"
+        btnJoin = findViewById<Button>(R.id.btnJoin).apply {
             isEnabled = false
             setOnClickListener { joinTeam() }
         }
 
-        btnCreate = Button(this).apply {
-            text = "Создать команду (код 6 цифр)"
+        btnCreate = findViewById<Button>(R.id.btnCreate).apply {
             isEnabled = false
             setOnClickListener { createTeamAndJoin() }
         }
 
-        btnLeave = Button(this).apply {
-            text = "Выйти из команды"
+        btnLeave = findViewById<Button>(R.id.btnLeave).apply {
             isEnabled = false
             setOnClickListener { leaveTeam() }
         }
 
-        btnGrantLocation = Button(this).apply {
-            text = "Разрешить геолокацию"
+        btnGrantLocation = findViewById<Button>(R.id.btnGrantLocation).apply {
             visibility = View.GONE
             setOnClickListener { requestLocationPermission() }
         }
 
-        listContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 12, 24, 24)
-        }
-
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-            addView(btnSignIn)
-            addView(space())
-            addView(callsignEdit)
-            addView(codeEdit)
-            addView(btnJoin)
-            addView(btnCreate)
-            addView(btnLeave)
-            addView(btnGrantLocation)
-            addView(space())
-            addView(statusView)
-            addView(space())
-            addView(TextView(this@MainActivity).apply {
-                text = "Тиммейты (last seen):"
-                textSize = 16f
-                setPadding(0, 8, 0, 8)
-            })
-            addView(listContainer)
-        }
-
-        setContentView(
-            ScrollView(this).apply {
-                addView(
-                    content,
-                    ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
-                )
-            }
-        )
+        listContainer = findViewById<LinearLayout>(R.id.listContainer)
 
         // Sensors
         rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
@@ -225,13 +178,6 @@ class MainActivity : Activity(), SensorEventListener {
         stopSensors()
         stopLocationUpdates()
         detachStateListener()
-    }
-
-    private fun space(): View = View(this).apply {
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            16
-        )
     }
 
     private fun append(msg: String) {
