@@ -9,7 +9,7 @@ class InMemoryMatchRepository(
     private val members = mutableMapOf<String, MutableList<Member>>()
 
     override fun createMatch(ownerUid: String, ownerNick: String, nowMs: Long): MatchMeta {
-        val matchId = UUID.randomUUID().toString().take(8)
+        val matchId = generateUniqueMatchId()
         val meta = MatchMeta(
             matchId = matchId,
             createdBy = ownerUid,
@@ -24,6 +24,11 @@ class InMemoryMatchRepository(
 
     override fun joinMatch(matchId: String, uid: String, nick: String, nowMs: Long): Member {
         val meta = metas[matchId] ?: error("Unknown matchId")
+
+        members[matchId]
+            ?.firstOrNull { it.uid == uid }
+            ?.let { return it }
+
         require(!meta.isLocked) { "Match is locked" }
         require(nowMs <= meta.expiresAtMs) { "Match expired" }
 
@@ -57,6 +62,20 @@ class InMemoryMatchRepository(
         var idx = 2
         while ("$base#$idx" in occupied) idx++
         return "$base#$idx"
+    }
+
+    private fun generateUniqueMatchId(): String {
+        repeat(MAX_MATCH_ID_GENERATION_ATTEMPTS) {
+            val matchId = UUID.randomUUID().toString().take(8)
+            if (!metas.containsKey(matchId)) {
+                return matchId
+            }
+        }
+        error("Failed to generate unique match id")
+    }
+
+    companion object {
+        private const val MAX_MATCH_ID_GENERATION_ATTEMPTS = 1_024
     }
 }
 
