@@ -1,6 +1,9 @@
 @echo off
 setlocal
 
+rem Always run from the repository folder where this script is located.
+cd /d "%~dp0"
+
 set "JAVA_HOME=C:\Program Files\Android\Android Studio\jbr"
 if exist "%JAVA_HOME%\bin\java.exe" (
   set "PATH=%JAVA_HOME%\bin;%PATH%"
@@ -11,7 +14,7 @@ if exist "%JAVA_HOME%\bin\java.exe" (
 )
 
 echo Installing debug build to connected device...
-call gradlew.bat :app:installDebug
+call "%~dp0gradlew.bat" :app:installDebug --stacktrace
 
 if errorlevel 1 (
   echo.
