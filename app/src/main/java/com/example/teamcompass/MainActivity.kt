@@ -18,6 +18,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.childCount
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationCallback
@@ -216,6 +217,7 @@ class MainActivity : Activity(), SensorEventListener {
             }
             .addOnFailureListener { e ->
                 authInProgress = false
+                pendingAuthActions.clear()
                 append("❌ Ошибка входа: ${e.message}\n")
             }
     }
@@ -308,6 +310,11 @@ class MainActivity : Activity(), SensorEventListener {
         stopLocationUpdates()
         TrackingForegroundService.stop(this)
         detachStateListener()
+
+        myLocation = null
+        sensorHeadingDeg = null
+        gpsHeadingDeg = null
+        effectiveHeadingDeg = null
 
         append("\n— Вышел (локально).\n")
         btnLeave.isEnabled = false
@@ -570,9 +577,10 @@ class MainActivity : Activity(), SensorEventListener {
             listContainer.addView(line)
         }
 
-        if (others.isEmpty()) {
+        val renderedOthers = listContainer.childCount - 1
+        if (renderedOthers == 0) {
             listContainer.addView(TextView(this).apply {
-                text = "(тиммейты не присылали точки)"
+                text = "(нет актуальных точек тиммейтов)"
                 setPadding(0, 8, 0, 0)
             })
         }

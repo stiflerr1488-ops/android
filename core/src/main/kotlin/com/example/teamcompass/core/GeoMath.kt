@@ -1,7 +1,5 @@
 package com.example.teamcompass.core
 
-import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -14,6 +12,9 @@ object GeoMath {
     private const val EarthRadiusMeters = 6_371_000.0
 
     fun distanceMeters(from: LocationPoint, to: LocationPoint): Double {
+        validatePoint(from)
+        validatePoint(to)
+
         val dLat = Math.toRadians(to.lat - from.lat)
         val dLon = Math.toRadians(to.lon - from.lon)
         val lat1 = Math.toRadians(from.lat)
@@ -27,6 +28,9 @@ object GeoMath {
     }
 
     fun bearingDegrees(from: LocationPoint, to: LocationPoint): Double {
+        validatePoint(from)
+        validatePoint(to)
+
         val lat1 = Math.toRadians(from.lat)
         val lat2 = Math.toRadians(to.lat)
         val dLon = Math.toRadians(to.lon - from.lon)
@@ -45,5 +49,13 @@ object GeoMath {
 
     fun normalizeDegrees0to360(angle: Double): Double {
         return ((angle % 360.0) + 360.0) % 360.0
+    }
+
+    private fun validatePoint(point: LocationPoint) {
+        require(point.lat.isFinite() && point.lon.isFinite()) {
+            "Latitude/longitude must be finite numbers"
+        }
+        require(point.lat in -90.0..90.0) { "Latitude must be within [-90, 90]" }
+        require(point.lon in -180.0..180.0) { "Longitude must be within [-180, 180]" }
     }
 }
