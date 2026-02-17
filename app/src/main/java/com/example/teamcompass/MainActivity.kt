@@ -30,7 +30,7 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
 import com.google.firebase.database.ValueEventListener
-import kotlin.math.abs
+import java.util.ArrayDeque
 import kotlin.math.roundToInt
 
 /**
@@ -49,7 +49,6 @@ class MainActivity : Activity(), SensorEventListener {
     private lateinit var listContainer: LinearLayout
     private lateinit var codeEdit: EditText
     private lateinit var callsignEdit: EditText
-    private lateinit var btnSignIn: Button
     private lateinit var btnJoin: Button
     private lateinit var btnCreate: Button
     private lateinit var btnLeave: Button
@@ -58,6 +57,9 @@ class MainActivity : Activity(), SensorEventListener {
     private var uid: String? = null
     private var teamCode: String? = null
     private var callsign: String = ""
+    private var authInProgress = false
+    private var autoJoinAttempted = false
+    private val pendingAuthActions = ArrayDeque<(String) -> Unit>()
 
     // Location
     private val fused by lazy { LocationServices.getFusedLocationProviderClient(this) }
@@ -113,10 +115,6 @@ class MainActivity : Activity(), SensorEventListener {
             setText(teamCode ?: "")
         }
 
-        btnSignIn = findViewById<Button>(R.id.btnSignIn).apply {
-            setOnClickListener { signIn() }
-        }
-
         btnJoin = findViewById<Button>(R.id.btnJoin).apply {
             isEnabled = false
             setOnClickListener { joinTeam() }
@@ -151,9 +149,26 @@ class MainActivity : Activity(), SensorEventListener {
             append("✅ Уже авторизован. uid=${it.uid}\n")
             btnJoin.isEnabled = true
             btnCreate.isEnabled = true
+            tryAutoJoinSavedTeam()
         } ?: run {
-            append("Нажми 'Войти (анонимно)'\n")
+            append("Выполняем анонимный вход...\n")
+            signInIfNeeded()
+            tryAutoJoinSavedTeam()
         }
+    }
+
+    private fun tryAutoJoinSavedTeam() {
+        if (autoJoinAttempted) return
+
+        val savedCode = teamCode
+        val savedCallsign = callsign
+        if (savedCode.isNullOrBlank() || savedCallsign.isBlank()) {
+            return
+        }
+
+        autoJoinAttempted = true
+        append("↪️ Автозаход в команду $savedCode...\n")
+        joinTeam()
     }
 
     override fun onResume() {
@@ -184,93 +199,108 @@ class MainActivity : Activity(), SensorEventListener {
         statusView.append(msg)
     }
 
-    private fun signIn() {
-        append("Входим...\n")
+    private fun signInIfNeeded() {
+        if (uid != null || authInProgress) return
+        authInProgress = true
         FirebaseAuth.getInstance().signInAnonymously()
             .addOnSuccessListener {
                 uid = it.user?.uid
                 append("✅ Вошёл. uid=$uid\n")
                 btnJoin.isEnabled = true
                 btnCreate.isEnabled = true
+                authInProgress = false
+                val signedUid = uid
+                while (pendingAuthActions.isNotEmpty() && !signedUid.isNullOrBlank()) {
+                    pendingAuthActions.removeFirst().invoke(signedUid)
+                }
             }
             .addOnFailureListener { e ->
+                authInProgress = false
                 append("❌ Ошибка входа: ${e.message}\n")
             }
     }
 
+    private fun withSignedInUser(action: (String) -> Unit) {
+        val currentUid = uid
+        if (!currentUid.isNullOrBlank()) {
+            action(currentUid)
+            return
+        }
+
+        pendingAuthActions.addLast(action)
+        if (!authInProgress) {
+            append("Выполняем анонимный вход...\n")
+        }
+        signInIfNeeded()
+    }
+
     private fun joinTeam() {
-        val u = uid
-        if (u.isNullOrBlank()) {
-            append("❗ Сначала нажми 'Войти (анонимно)'\n")
-            return
-        }
+        withSignedInUser { u ->
 
-        val code = codeEdit.text.toString().trim()
-        val cs = callsignEdit.text.toString().trim()
+            val code = codeEdit.text.toString().trim()
+            val cs = callsignEdit.text.toString().trim()
 
-        if (!code.matches(Regex("\\d{6}"))) {
-            append("❗ Код должен быть из 6 цифр (например 012345)\n")
-            return
-        }
-        if (cs.isBlank()) {
-            append("❗ Введи позывной\n")
-            return
-        }
+            if (!code.matches(Regex("\\d{6}"))) {
+                append("❗ Код должен быть из 6 цифр (например 012345)\n")
+                return@withSignedInUser
+            }
+            if (cs.isBlank()) {
+                append("❗ Введи позывной\n")
+                return@withSignedInUser
+            }
 
         // Save locally
-        prefs.edit().putString("callsign", cs).putString("teamCode", code).apply()
-        callsign = cs
-        teamCode = code
+            prefs.edit().putString("callsign", cs).putString("teamCode", code).apply()
+            callsign = cs
+            teamCode = code
 
-        append("Подключаемся к команде $code...\n")
+            append("Подключаемся к команде $code...\n")
 
-        val member = hashMapOf(
-            "callsign" to cs,
-            "joinedAt" to ServerValue.TIMESTAMP
-        )
+            val member = hashMapOf(
+                "callsign" to cs,
+                "joinedAt" to ServerValue.TIMESTAMP
+            )
 
-        db.child("teams").child(code).child("members").child(u)
-            .setValue(member)
-            .addOnSuccessListener {
-                append("✅ В команде $code как '$cs'\n")
-                btnLeave.isEnabled = true
-                startSensors()
-                startLocationUpdatesIfPermitted()
-                TrackingForegroundService.start(this, u, code, callsign)
-                append("🛰️ Foreground-service трекинг активирован\n")
-                attachStateListener(code)
-            }
-            .addOnFailureListener { e ->
-                append("❌ Не удалось войти в команду: ${e.message}\n")
-            }
+            db.child("teams").child(code).child("members").child(u)
+                .setValue(member)
+                .addOnSuccessListener {
+                    append("✅ В команде $code как '$cs'\n")
+                    btnLeave.isEnabled = true
+                    startSensors()
+                    startLocationUpdatesIfPermitted()
+                    TrackingForegroundService.start(this, u, code, callsign)
+                    append("🛰️ Foreground-service трекинг активирован\n")
+                    attachStateListener(code)
+                }
+                .addOnFailureListener { e ->
+                    append("❌ Не удалось войти в команду: ${e.message}\n")
+                }
+        }
     }
 
     private fun createTeamAndJoin() {
-        val u = uid
-        if (u.isNullOrBlank()) {
-            append("❗ Сначала нажми 'Войти (анонимно)'\n")
-            return
-        }
+        withSignedInUser { u ->
 
-        val cs = callsignEdit.text.toString().trim()
-        if (cs.isBlank()) {
-            append("❗ Введи позывной (он сохранится)\n")
-            return
-        }
+            val cs = callsignEdit.text.toString().trim()
+            if (cs.isBlank()) {
+                append("❗ Введи позывной (он сохранится)\n")
+                return@withSignedInUser
+            }
 
-        val code = (0..999999).random().toString().padStart(6, '0')
-        codeEdit.setText(code)
-        append("🆕 Создан код команды: $code (отправь его ребятам)\n")
+            val code = (0..999999).random().toString().padStart(6, '0')
+            codeEdit.setText(code)
+            append("🆕 Создан код команды: $code (отправь его ребятам)\n")
 
         // Best-effort meta (не критично, но удобно видеть в базе)
-        db.child("teams").child(code).child("meta").updateChildren(
-            mapOf(
-                "createdAt" to ServerValue.TIMESTAMP,
-                "createdBy" to u
+            db.child("teams").child(code).child("meta").updateChildren(
+                mapOf(
+                    "createdAt" to ServerValue.TIMESTAMP,
+                    "createdBy" to u
+                )
             )
-        )
 
-        joinTeam()
+            joinTeam()
+        }
     }
 
     private fun leaveTeam() {
