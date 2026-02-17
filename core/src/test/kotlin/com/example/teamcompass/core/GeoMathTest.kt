@@ -2,6 +2,7 @@ package com.example.teamcompass.core
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class GeoMathTest {
@@ -23,5 +24,19 @@ class GeoMathTest {
     fun `relative angle normalized to minus 180 plus 180`() {
         assertEquals(-170.0, GeoMath.normalizeRelativeDegrees(190.0))
         assertEquals(170.0, GeoMath.normalizeRelativeDegrees(-190.0))
+    }
+
+    @Test
+    fun `invalid latitude is rejected`() {
+        val invalid = LocationPoint(120.0, 37.0, 5.0, 0.0, null, 0)
+        val valid = LocationPoint(55.0, 37.0, 5.0, 0.0, null, 0)
+        assertFailsWith<IllegalArgumentException> { GeoMath.distanceMeters(invalid, valid) }
+    }
+
+    @Test
+    fun `invalid longitude is rejected`() {
+        val invalid = LocationPoint(55.0, -200.0, 5.0, 0.0, null, 0)
+        val valid = LocationPoint(55.0, 37.0, 5.0, 0.0, null, 0)
+        assertFailsWith<IllegalArgumentException> { GeoMath.bearingDegrees(valid, invalid) }
     }
 }
