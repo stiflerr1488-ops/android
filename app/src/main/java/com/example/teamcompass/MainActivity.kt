@@ -58,6 +58,7 @@ class MainActivity : Activity(), SensorEventListener {
     private var teamCode: String? = null
     private var callsign: String = ""
     private var authInProgress = false
+    private var autoJoinAttempted = false
     private val pendingAuthActions = ArrayDeque<(String) -> Unit>()
 
     // Location
@@ -148,10 +149,26 @@ class MainActivity : Activity(), SensorEventListener {
             append("✅ Уже авторизован. uid=${it.uid}\n")
             btnJoin.isEnabled = true
             btnCreate.isEnabled = true
+            tryAutoJoinSavedTeam()
         } ?: run {
             append("Выполняем анонимный вход...\n")
             signInIfNeeded()
+            tryAutoJoinSavedTeam()
         }
+    }
+
+    private fun tryAutoJoinSavedTeam() {
+        if (autoJoinAttempted) return
+
+        val savedCode = teamCode
+        val savedCallsign = callsign
+        if (savedCode.isNullOrBlank() || savedCallsign.isBlank()) {
+            return
+        }
+
+        autoJoinAttempted = true
+        append("↪️ Автозаход в команду $savedCode...\n")
+        joinTeam()
     }
 
     override fun onResume() {
