@@ -11,4 +11,5 @@ interface MatchRepository {
 interface StateRepository {
     fun upsertState(matchId: String, state: PlayerState)
     fun listStates(matchId: String): List<PlayerState>
+    fun clearStates(matchId: String)
 }

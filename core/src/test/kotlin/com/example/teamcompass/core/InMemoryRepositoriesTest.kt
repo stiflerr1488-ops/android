@@ -87,4 +87,26 @@ class InMemoryRepositoriesTest {
         val sameMember = repo.joinMatch(meta.matchId, uid = "u1", nick = "НовыйНик", nowMs = expiredAt + 10)
         assertEquals(member, sameMember)
     }
+
+    @Test
+    fun `close match clears persisted states`() {
+        val states = InMemoryStateRepository()
+        val repo = InMemoryMatchRepository(states)
+        val now = 1_000L
+        val meta = repo.createMatch(ownerUid = "u0", ownerNick = "Лидер", nowMs = now)
+
+        states.upsertState(
+            meta.matchId,
+            PlayerState(
+                uid = "u0",
+                nick = "Лидер",
+                point = LocationPoint(55.0, 37.0, 5.0, 0.0, null, now),
+            ),
+        )
+        assertEquals(1, states.listStates(meta.matchId).size)
+
+        repo.closeMatch(meta.matchId)
+
+        assertEquals(0, states.listStates(meta.matchId).size)
+    }
 }

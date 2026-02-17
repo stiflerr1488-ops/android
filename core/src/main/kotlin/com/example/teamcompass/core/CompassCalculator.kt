@@ -7,27 +7,17 @@ class CompassCalculator {
         others: List<PlayerState>,
         nowMs: Long,
     ): List<CompassTarget> {
-        return others.mapNotNull { player ->
+        return others.map { player ->
             val ageSec = ((nowMs - player.point.timestampMs).coerceAtLeast(0) / 1000)
             val staleness = StalenessPolicy.classify(ageSec)
-            if (staleness == Staleness.HIDDEN) {
-                return@mapNotNull CompassTarget(
-                    uid = player.uid,
-                    nick = player.nick,
-                    distanceMeters = GeoMath.distanceMeters(me, player.point),
-                    relativeBearingDeg = 0.0,
-                    staleness = staleness,
-                    lowAccuracy = player.point.accMeters > 50,
-                    lastSeenSec = ageSec,
-                )
-            }
-
+            val distanceMeters = GeoMath.distanceMeters(me, player.point)
             val bearing = GeoMath.bearingDegrees(me, player.point)
             val relative = GeoMath.normalizeRelativeDegrees(bearing - myHeadingDeg)
+
             CompassTarget(
                 uid = player.uid,
                 nick = player.nick,
-                distanceMeters = GeoMath.distanceMeters(me, player.point),
+                distanceMeters = distanceMeters,
                 relativeBearingDeg = relative,
                 staleness = staleness,
                 lowAccuracy = player.point.accMeters > 50,

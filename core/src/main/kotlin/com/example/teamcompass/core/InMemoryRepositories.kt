@@ -46,6 +46,7 @@ class InMemoryMatchRepository(
     override fun closeMatch(matchId: String) {
         metas.remove(matchId)
         members.remove(matchId)
+        stateRepository.clearStates(matchId)
     }
 
     override fun getSnapshot(matchId: String): MatchSnapshot? {
@@ -88,4 +89,8 @@ class InMemoryStateRepository : StateRepository {
 
     override fun listStates(matchId: String): List<PlayerState> =
         map[matchId].orEmpty().values.toList()
+
+    override fun clearStates(matchId: String) {
+        map.remove(matchId)
+    }
 }
