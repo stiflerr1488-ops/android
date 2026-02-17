@@ -10,6 +10,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
 import android.os.Bundle
+import android.os.Handler
 import android.os.Looper
 import android.text.InputFilter
 import android.text.InputType
@@ -77,6 +78,10 @@ class MainActivity : Activity(), SensorEventListener {
     private val db by lazy { FirebaseDatabase.getInstance().reference }
     private var stateListener: ValueEventListener? = null
 
+    private val renderHandler = Handler(Looper.getMainLooper())
+    private var renderScheduled = false
+
+
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val loc = result.lastLocation ?: return
@@ -88,7 +93,7 @@ class MainActivity : Activity(), SensorEventListener {
             }
 
             effectiveHeadingDeg = chooseEffectiveHeading()
-            renderTeammatesLastKnown() // update arrows even if teammates unchanged
+            scheduleRenderTeammates() // update arrows even if teammates unchanged
         }
     }
 
@@ -187,6 +192,8 @@ class MainActivity : Activity(), SensorEventListener {
     override fun onPause() {
         super.onPause()
         stopSensors()
+        renderHandler.removeCallbacksAndMessages(null)
+        renderScheduled = false
     }
 
     override fun onDestroy() {
@@ -194,6 +201,7 @@ class MainActivity : Activity(), SensorEventListener {
         stopSensors()
         stopLocationUpdates()
         detachStateListener()
+        renderHandler.removeCallbacksAndMessages(null)
     }
 
     private fun append(msg: String) {
@@ -419,7 +427,7 @@ class MainActivity : Activity(), SensorEventListener {
 
         sensorHeadingDeg = smoothAngle(sensorHeadingDeg, deg, 0.15f)
         effectiveHeadingDeg = chooseEffectiveHeading()
-        renderTeammatesLastKnown()
+        scheduleRenderTeammates()
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
@@ -461,7 +469,7 @@ class MainActivity : Activity(), SensorEventListener {
                     }
                 }
                 lastStatesSnapshot = map
-                renderTeammatesLastKnown()
+                scheduleRenderTeammates()
             }
 
             override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
@@ -481,6 +489,15 @@ class MainActivity : Activity(), SensorEventListener {
         stateListener = null
         lastStatesSnapshot = emptyMap()
         listContainer.removeAllViews()
+    }
+
+    private fun scheduleRenderTeammates() {
+        if (renderScheduled) return
+        renderScheduled = true
+        renderHandler.postDelayed({
+            renderScheduled = false
+            renderTeammatesLastKnown()
+        }, RENDER_DEBOUNCE_MS)
     }
 
     private fun renderTeammatesLastKnown() {
@@ -542,10 +559,7 @@ class MainActivity : Activity(), SensorEventListener {
 
         for (st in others) {
             val ageSec = st.ageSec(now)
-            if (ageSec > STALE_HIDE_AFTER_SEC) {
-                // hide fully
-                continue
-            }
+            if (MainActivityUiPolicy.isHidden(ageSec)) continue
 
             val bearing = bearingDeg(myLoc.latitude, myLoc.longitude, st.lat, st.lon)
             val distM = distanceMeters(myLoc.latitude, myLoc.longitude, st.lat, st.lon)
@@ -559,11 +573,7 @@ class MainActivity : Activity(), SensorEventListener {
 
             val arrow = if (myHeading != null) arrow8(rel) else "N→" // indicate bearing reference
 
-            val staleMark = when {
-                ageSec <= 20 -> ""
-                ageSec <= 60 -> " (сомн)"
-                else -> " (старые)"
-            }
+            val staleMark = MainActivityUiPolicy.staleMark(ageSec)
 
             val accMark = if (st.acc > 50.0) " ⚠️acc" else ""
 
@@ -650,7 +660,6 @@ class MainActivity : Activity(), SensorEventListener {
     companion object {
         private const val REQ_LOCATION = 1001
 
-        // Staleness UI
-        private const val STALE_HIDE_AFTER_SEC = 120L
+        private const val RENDER_DEBOUNCE_MS = 120L
     }
 }
