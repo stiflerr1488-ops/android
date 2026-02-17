@@ -65,8 +65,6 @@ class MainActivity : Activity(), SensorEventListener {
     // Location
     private val fused by lazy { LocationServices.getFusedLocationProviderClient(this) }
     private var myLocation: Location? = null
-    private var lastSentLocation: Location? = null
-    private var lastSentAtMs: Long = 0
 
     // Heading
     private val sensorManager by lazy { getSystemService(SENSOR_SERVICE) as SensorManager }
@@ -90,7 +88,6 @@ class MainActivity : Activity(), SensorEventListener {
             }
 
             effectiveHeadingDeg = chooseEffectiveHeading()
-            maybeSendState(loc)
             renderTeammatesLastKnown() // update arrows even if teammates unchanged
         }
     }
@@ -209,16 +206,18 @@ class MainActivity : Activity(), SensorEventListener {
     override fun onResume() {
         super.onResume()
         // If already in team, resume sensors/location
-        if (!teamCode.isNullOrBlank() && !uid.isNullOrBlank() && btnLeave.isEnabled) {
+        val userId = uid
+        val code = teamCode
+        if (!code.isNullOrBlank() && !userId.isNullOrBlank() && btnLeave.isEnabled) {
             startSensors()
             startLocationUpdatesIfPermitted()
+            TrackingForegroundService.start(this, userId, code, callsign)
         }
     }
 
     override fun onPause() {
         super.onPause()
         stopSensors()
-        stopLocationUpdates()
     }
 
     override fun onDestroy() {
@@ -291,6 +290,8 @@ class MainActivity : Activity(), SensorEventListener {
                 btnLeave.isEnabled = true
                 startSensors()
                 startLocationUpdatesIfPermitted()
+                TrackingForegroundService.start(this, u, code, callsign)
+                append("🛰️ Foreground-service трекинг активирован\n")
                 attachStateListener(code)
             }
             .addOnFailureListener { e ->
@@ -329,6 +330,7 @@ class MainActivity : Activity(), SensorEventListener {
     private fun leaveTeam() {
         stopSensors()
         stopLocationUpdates()
+        TrackingForegroundService.stop(this)
         detachStateListener()
 
         append("\n— Вышел (локально).\n")
@@ -367,6 +369,11 @@ class MainActivity : Activity(), SensorEventListener {
                 btnGrantLocation.visibility = View.GONE
                 append("✅ Геолокация разрешена\n")
                 startLocationUpdatesIfPermitted()
+                val u = uid
+                val code = teamCode
+                if (!u.isNullOrBlank() && !code.isNullOrBlank() && btnLeave.isEnabled) {
+                    TrackingForegroundService.start(this, u, code, callsign)
+                }
             } else {
                 append("❌ Без геолокации стрелки/дистанция не будут работать\n")
             }
@@ -392,45 +399,11 @@ class MainActivity : Activity(), SensorEventListener {
             .build()
 
         fused.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-        append("📍 Трекинг включён (пока приложение на экране)\n")
+        append("📍 Локальные обновления экрана включены\n")
     }
 
     private fun stopLocationUpdates() {
         fused.removeLocationUpdates(locationCallback)
-    }
-
-    private fun maybeSendState(loc: Location) {
-        val u = uid ?: return
-        val code = teamCode ?: return
-        if (!btnLeave.isEnabled) return
-
-        val now = System.currentTimeMillis()
-        val lastLoc = lastSentLocation
-
-        val timeOk = (now - lastSentAtMs) >= SEND_EVERY_MS
-        val distOk = lastLoc == null || loc.distanceTo(lastLoc) >= SEND_DISTANCE_M
-
-        if (!timeOk && !distOk) return
-
-        lastSentAtMs = now
-        lastSentLocation = Location(loc)
-
-        val heading = chooseEffectiveHeading()
-        val payload: MutableMap<String, Any> = hashMapOf(
-            "lat" to loc.latitude,
-            "lon" to loc.longitude,
-            "acc" to loc.accuracy.toDouble(),
-            "speed" to (if (loc.hasSpeed()) loc.speed.toDouble() else 0.0),
-            "heading" to ((heading ?: 0f).toDouble()),
-            "callsign" to callsign,
-            "ts" to ServerValue.TIMESTAMP
-        )
-
-        db.child("teams").child(code).child("state").child(u)
-            .updateChildren(payload)
-            .addOnFailureListener { e ->
-                append("❌ Ошибка отправки state: ${e.message}\n")
-            }
     }
 
     // -----------------------------
@@ -692,10 +665,6 @@ class MainActivity : Activity(), SensorEventListener {
 
     companion object {
         private const val REQ_LOCATION = 1001
-
-        // Send policy (foreground MVP)
-        private const val SEND_EVERY_MS = 3000L
-        private const val SEND_DISTANCE_M = 10f
 
         // Staleness UI
         private const val STALE_HIDE_AFTER_SEC = 120L
