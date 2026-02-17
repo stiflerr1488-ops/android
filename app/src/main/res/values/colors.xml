@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="tc_seed">#2E7D32</color>
+    <color name="tc_surface">#0F1511</color>
+    <color name="tc_surface2">#121A14</color>
+    <color name="tc_text">#E8F5E9</color>
+</resources>
