@@ -404,6 +404,11 @@ private fun JoinScreen(
         ) {
             Column(Modifier.padding(16.dp)) {
                 Text("Вход в команду", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Быстрый горизонтальный вход: слева создать, справа войти по коду.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
                 Spacer(Modifier.height(12.dp))
 
                 OutlinedTextField(
@@ -414,45 +419,71 @@ private fun JoinScreen(
                     enabled = !isBusy,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                    label = { Text("Код команды (6 цифр)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    enabled = !isBusy,
-                    modifier = Modifier.fillMaxWidth()
-                )
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(12.dp))
 
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = onCreate,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Card(
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        enabled = !isBusy
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
                     ) {
-                        if (isBusy) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(10.dp))
-                            Text("Создаю…")
-                        } else {
-                            Icon(Icons.Default.Groups, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Создать")
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Новая команда", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Создать новый код и поделиться им с группой.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(
+                                onClick = onCreate,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                enabled = !isBusy
+                            ) {
+                                if (isBusy) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Создаю…")
+                                } else {
+                                    Icon(Icons.Default.Groups, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Создать")
+                                }
+                            }
                         }
                     }
-                    FilledTonalButton(
-                        onClick = { onJoin(code) },
+
+                    Card(
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        enabled = !isBusy && code.length == 6
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                     ) {
-                        Icon(Icons.Default.GpsFixed, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Войти")
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Вход по коду", fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(
+                                value = code,
+                                onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                                label = { Text("Код (6 цифр)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                enabled = !isBusy,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            FilledTonalButton(
+                                onClick = { onJoin(code) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                enabled = !isBusy && code.length == 6
+                            ) {
+                                Icon(Icons.Default.GpsFixed, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Войти")
+                            }
+                        }
                     }
                 }
 
