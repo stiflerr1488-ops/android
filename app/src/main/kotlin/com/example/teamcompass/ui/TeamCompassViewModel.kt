@@ -12,14 +12,19 @@ import android.media.ToneGenerator
 import android.net.Uri
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.content.Intent
 import android.view.Surface
 import android.view.WindowManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.teamcompass.BuildConfig
+import com.example.teamcompass.TrackingService
 import com.example.teamcompass.core.CompassCalculator
 import com.example.teamcompass.core.LocationPoint
 import com.example.teamcompass.core.PlayerMode
 import com.example.teamcompass.core.PlayerState
+import com.example.teamcompass.core.TeamCodeSecurity
 import com.example.teamcompass.core.TrackingMode
 import com.example.teamcompass.core.TrackingPolicy
 import com.example.teamcompass.core.GeoMath
@@ -123,14 +128,11 @@ data class UiState(
 class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
 
     private val auth = FirebaseAuth.getInstance()
-    /**
-     * IMPORTANT:
-     * In some Firebase projects the generated google-services.json doesn't include a firebase_url,
-     * and FirebaseDatabase.getInstance() may point to a different default RTDB instance.
-     * We pin the RTDB URL explicitly to avoid the "Data stays null" situation.
-     */
-    private val rtdbUrl = "https://sk-grom-default-rtdb.europe-west1.firebasedatabase.app"
-    private val db = FirebaseDatabase.getInstance(rtdbUrl).reference
+    private val db = if (BuildConfig.RTDB_URL.isNotBlank()) {
+        FirebaseDatabase.getInstance(BuildConfig.RTDB_URL).reference
+    } else {
+        FirebaseDatabase.getInstance().reference
+    }
 
     private val prefs = UserPrefs(app)
 
@@ -456,11 +458,13 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
         val nick = _ui.value.callsign.ifBlank { "Игрок" }
         val code = generateCode()
         val base = db.child("teams").child(code)
+        val joinSalt = TeamCodeSecurity.generateSaltHex()
+        val joinHash = TeamCodeSecurity.hashJoinCode(code, joinSalt)
+        val now = System.currentTimeMillis()
 
         val myNonce = ++opNonce
         _ui.update { it.copy(isBusy = true) }
 
-        // Timeout guard: if Firebase doesn't respond, we must unblock UI.
         viewModelScope.launch {
             kotlinx.coroutines.delay(12_000)
             val s = _ui.value
@@ -473,9 +477,11 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             "createdAtMs" to ServerValue.TIMESTAMP,
             "createdBy" to uid,
             "isLocked" to false,
+            "expiresAtMs" to (now + 12 * 60 * 60_000L),
+            "joinSalt" to joinSalt,
+            "joinHash" to joinHash,
         )
 
-        // ВАЖНО: пишем именно в /meta (а не в /teams/{code} целиком), чтобы правила на meta срабатывали корректно.
         base.child("meta").setValue(meta)
             .addOnSuccessListener {
                 val member = mapOf(
@@ -534,6 +540,34 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     return@addOnSuccessListener
                 }
+
+                val isLocked = snap.child("isLocked").getValue(Boolean::class.java) ?: false
+                if (isLocked) {
+                    if (opNonce == myNonce) {
+                        _ui.update { it.copy(isBusy = false, lastError = "Матч закрыт для новых входов") }
+                    }
+                    return@addOnSuccessListener
+                }
+
+                val expiresAt = snap.child("expiresAtMs").getValue(Long::class.java) ?: Long.MAX_VALUE
+                if (System.currentTimeMillis() > expiresAt) {
+                    if (opNonce == myNonce) {
+                        _ui.update { it.copy(isBusy = false, lastError = "Матч истёк") }
+                    }
+                    return@addOnSuccessListener
+                }
+
+                val joinSalt = snap.child("joinSalt").getValue(String::class.java)
+                val joinHash = snap.child("joinHash").getValue(String::class.java)
+                if (!joinSalt.isNullOrBlank() && !joinHash.isNullOrBlank()) {
+                    if (!TeamCodeSecurity.verifyJoinCode(code, joinSalt, joinHash)) {
+                        if (opNonce == myNonce) {
+                            _ui.update { it.copy(isBusy = false, lastError = "Код не прошёл проверку") }
+                        }
+                        return@addOnSuccessListener
+                    }
+                }
+
                 val proceed: () -> Unit = {
                     if (opNonce == myNonce) {
                         _ui.update { it.copy(teamCode = code, isBusy = false, lastError = null) }
@@ -870,9 +904,18 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         startHeading()
+        val policy = TrackingPolicy(
+            minIntervalMs = when (mode) {
+                TrackingMode.GAME -> _ui.value.gameIntervalSec * 1000L
+                TrackingMode.SILENT -> _ui.value.silentIntervalSec * 1000L
+            },
+            minDistanceMeters = when (mode) {
+                TrackingMode.GAME -> _ui.value.gameDistanceM.toDouble()
+                TrackingMode.SILENT -> _ui.value.silentDistanceM.toDouble()
+            }
+        )
 
-        // Always request frequent updates; we gate writes ourselves (5s / 30s / 60s).
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2_000L)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, (policy.minIntervalMs / 2).coerceAtLeast(2_000L))
             .setMinUpdateDistanceMeters(0f)
             .build()
 
@@ -881,7 +924,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             val cb = object : LocationCallback() {
                 override fun onLocationResult(result: LocationResult) {
                     val loc = result.lastLocation ?: return
-                    onLocation(loc, code, uid, nick)
+                    onLocation(loc, code, uid, nick, policy)
                 }
             }
             locationCallback = cb
@@ -890,13 +933,17 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             lastMoveMs = 0L
             lastMoveLoc = null
             _ui.update { it.copy(isTracking = true) }
+            ContextCompat.startForegroundService(
+                getApplication(),
+                Intent(getApplication(), TrackingService::class.java),
+            )
             if (_ui.value.playerMode == PlayerMode.DEAD) startDeadReminder()
         }
 
         // warm up (fast last known)
         @SuppressLint("MissingPermission")
         fused.lastLocation.addOnSuccessListener { loc ->
-            if (loc != null) onLocation(loc, code, uid, nick)
+            if (loc != null) onLocation(loc, code, uid, nick, policy)
             doRequest()
         }.addOnFailureListener {
             doRequest()
@@ -910,7 +957,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
         startTracking(mode, persistMode = false)
     }
 
-    private fun onLocation(loc: Location, code: String, uid: String, nick: String) {
+    private fun onLocation(loc: Location, code: String, uid: String, nick: String, policy: TrackingPolicy) {
         val prevAnchored = _ui.value.isAnchored
         val now = System.currentTimeMillis()
         val heading = _ui.value.myHeadingDeg
@@ -923,21 +970,14 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             timestampMs = now,
         )
         // Movement / anchor detection
+        val moveDistanceM = lastMoveLoc?.distanceTo(loc)?.toDouble() ?: Double.MAX_VALUE
         val moved = run {
-            val prev = lastMoveLoc
-            if (prev == null) {
+            if (moveDistanceM == Double.MAX_VALUE || moveDistanceM >= 5.0) {
                 lastMoveLoc = Location(loc)
                 lastMoveMs = now
                 true
             } else {
-                val dist = prev.distanceTo(loc)
-                if (dist >= 5f) {
-                    lastMoveLoc = Location(loc)
-                    lastMoveMs = now
-                    true
-                } else {
-                    false
-                }
+                false
             }
         }
 
@@ -952,12 +992,14 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
 
         val intervalMs = when {
             mode == PlayerMode.DEAD -> 60_000L
-            anchored -> 30_000L
-            else -> 5_000L
+            anchored -> (policy.minIntervalMs * 3).coerceAtMost(60_000L)
+            else -> policy.minIntervalMs
         }
 
+        val movedEnough = moveDistanceM >= policy.minDistanceMeters
+
         // Rate-limit writes to RTDB
-        val shouldSend = (lastSentMs == 0L) || (now - lastSentMs >= intervalMs)
+        val shouldSend = (lastSentMs == 0L) || (now - lastSentMs >= intervalMs) || movedEnough
         if (shouldSend) {
             sendStateNow(code, uid, nick, point)
             lastSentMs = now
@@ -974,6 +1016,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
         locationCallback = null
         stopHeading()
         stopDeadReminder()
+        getApplication<Application>().stopService(Intent(getApplication(), TrackingService::class.java))
         _ui.update { it.copy(isTracking = false) }
     }
 

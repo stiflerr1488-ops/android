@@ -9,16 +9,20 @@ android {
     namespace = "com.example.teamcompass"
     compileSdk = 34
 
+    val rtdbUrl = (project.findProperty("TEAMCOMPASS_RTDB_URL") as String?)?.trim().orEmpty()
+
     defaultConfig {
         applicationId = "com.example.teamcompass"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "0.2"
+        buildConfigField("String", "RTDB_URL", "\"${rtdbUrl.replace("\"", "\\\"")}\"")
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     // Align Java/Kotlin bytecode targets (avoids "Inconsistent JVM-target" build failures).
