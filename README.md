@@ -1,26 +1,38 @@
 # TeamCompass MVP Prototype
 
-Этот коммит начинает реализацию приложения по `MVP_SPEC.md`.
+Android-приложение (Jetpack Compose + Firebase RTDB) для командной координации в матче: лобби, трекинг, компас и тактические отметки.
 
 ## Что реализовано сейчас
-- `core/` — доменные модели и логика MVP:
-  - вычисления distance/bearing/relative angle;
-  - политика staleness;
-  - режимы трекинга (`Игра` / `Тихо`);
-  - backoff для ретраев;
-  - in-memory репозитории матча/состояний;
-  - use-case классы (`StartMatch`, `JoinMatch`, `StartTracking`, `StopTracking`).
-- `app/` — минимальный JVM entrypoint (`main`) для демонстрации расчёта целей.
+- `core/` — доменная логика и тесты:
+  - гео-математика (`distance/bearing/relative`),
+  - staleness-политика,
+  - политики трекинга и backoff,
+  - in-memory репозитории и use-cases,
+  - hash-проверка join-кода (`SHA-256 + salt`).
+- `app/` — Android-приложение:
+  - экраны лобби/компаса/списка,
+  - Firebase Anonymous Auth + RTDB,
+  - запуск трекинга с foreground service,
+  - хранение настроек и профиля в DataStore,
+  - импорт KMZ/KML и тактические точки.
 
-## Почему без полноценного Android UI в этом шаге
-В текущем окружении не разрешаются Gradle plugin-артефакты (Kotlin/Android plugins),
-поэтому сборка Android-модуля блокируется на уровне toolchain.
-Логика вынесена в независимый модуль `core`, чтобы продолжить реализацию
-и покрыть правила MVP тестами.
+## Настройка окружения
+1. Положите рабочий `google-services.json` в `app/`.
+2. (Опционально) задайте URL RTDB через Gradle property:
+   - `TEAMCOMPASS_RTDB_URL=https://<your-db>.firebasedatabase.app`
+   - можно добавить в `~/.gradle/gradle.properties`.
+3. Соберите проект в Android Studio или Gradle.
 
-## Следующий шаг
-При рабочем доступе к Android Gradle plugins:
-1. перевести `app` обратно на Android + Compose;
-2. подключить Firebase Auth/RTDB;
-3. добавить Foreground Service для location tracking;
-4. связать UI экранов Lobby/Compass/List с use-case и Flow-состоянием.
+## Трекинг
+- Режим `Игра`: по умолчанию 3 сек или 10 м (настраивается в UI).
+- Режим `Тихо`: по умолчанию 10 сек или 30 м (настраивается в UI).
+- Во время трекинга запускается foreground service с постоянной нотификацией.
+
+## Тесты
+- Основные unit-тесты находятся в `core/src/test`.
+- Запуск: `./gradlew :core:test`.
+
+## Дальше по roadmap
+- Усиление RTDB Security Rules.
+- Интеграционные тесты app-слоя (ViewModel + Firebase).
+- Полировка UX и диагностика сетевой деградации.
