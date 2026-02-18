@@ -124,6 +124,8 @@ private const val ROUTE_JOIN = "join"
 private const val ROUTE_COMPASS = "compass"
 private const val ROUTE_SETTINGS = "settings"
 
+private enum class TargetsSortMode { DISTANCE, FRESHNESS }
+
 @Composable
 fun TeamCompassApp(vm: TeamCompassViewModel = viewModel()) {
     val state by vm.ui.collectAsState()
@@ -508,7 +510,29 @@ private fun CompassScreen(
     val targets = remember(state.players, state.me, state.myHeadingDeg, now) { targetsProvider(now) }
 
     var showList by remember { mutableStateOf(false) }
+    var listQuery by remember { mutableStateOf("") }
+    var sortMode by remember { mutableStateOf(TargetsSortMode.DISTANCE) }
     var menuExpanded by remember { mutableStateOf(false) }
+
+    val filteredTargets = remember(targets, listQuery, sortMode) {
+        val normalizedQuery = listQuery.trim().lowercase(Locale.getDefault())
+        val matching = targets.filter { t ->
+            normalizedQuery.isBlank() || t.nick.lowercase(Locale.getDefault()).contains(normalizedQuery)
+        }
+        when (sortMode) {
+            TargetsSortMode.DISTANCE -> matching.sortedWith(
+                compareByDescending<CompassTarget> { it.sosActive }
+                    .thenBy { it.staleness == Staleness.HIDDEN }
+                    .thenBy { it.distanceMeters }
+            )
+
+            TargetsSortMode.FRESHNESS -> matching.sortedWith(
+                compareByDescending<CompassTarget> { it.sosActive }
+                    .thenBy { it.lastSeenSec }
+                    .thenBy { it.distanceMeters }
+            )
+        }
+    }
 
     var showStatusDialog by remember { mutableStateOf(false) }
     var showQuickCmdDialog by remember { mutableStateOf(false) }
@@ -973,9 +997,35 @@ private fun CompassScreen(
                     }
                     Spacer(Modifier.height(8.dp))
 
-                    if (targets.isEmpty()) {
+                    OutlinedTextField(
+                        value = listQuery,
+                        onValueChange = { listQuery = it.take(24) },
+                        label = { Text("Поиск по позывному") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AssistChip(
+                            onClick = { sortMode = TargetsSortMode.DISTANCE },
+                            label = { Text(if (sortMode == TargetsSortMode.DISTANCE) "✓ По дистанции" else "По дистанции") }
+                        )
+                        AssistChip(
+                            onClick = { sortMode = TargetsSortMode.FRESHNESS },
+                            label = { Text(if (sortMode == TargetsSortMode.FRESHNESS) "✓ По давности" else "По давности") }
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    if (filteredTargets.isEmpty()) {
                         Text(
-                            "Пусто",
+                            if (targets.isEmpty()) "Пусто" else "Ничего не найдено",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -984,7 +1034,7 @@ private fun CompassScreen(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(targets, key = { it.uid }) { t ->
+                            items(filteredTargets, key = { it.uid }) { t ->
                                 TargetRow(t)
                             }
                         }
