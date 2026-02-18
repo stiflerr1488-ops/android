@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Military palette: olive + sand -->
+    <color name="tc_olive">#6B7D2A</color>
+    <color name="tc_olive_dark">#3C4616</color>
+    <color name="tc_sand">#C2B280</color>
+    <color name="tc_sand_light">#EFE6CF</color>
+
+    <color name="tc_bg">#0E0F0A</color>
+    <color name="tc_surface">#14150D</color>
+    <color name="tc_surface2">#1B1D12</color>
+    <color name="tc_text">#EFE6CF</color>
+</resources>
