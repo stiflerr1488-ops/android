@@ -120,6 +120,33 @@ fun SettingsScreen(
                 onChange = onSilentPolicy
             )
 
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Диагностика", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Read errors: ${state.telemetry.rtdbReadErrors} · Write errors: ${state.telemetry.rtdbWriteErrors}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "Tracking restarts: ${state.telemetry.trackingRestarts}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    state.telemetry.lastTrackingRestartReason?.let { reason ->
+                        Text(
+                            "Last restart reason: $reason",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             Text(
                 "Подсказка: частота = как часто телефон отправляет точку. Дистанция = отправка при заметном смещении.",
                 style = MaterialTheme.typography.bodySmall,

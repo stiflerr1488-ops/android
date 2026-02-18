@@ -13,6 +13,7 @@ import android.net.Uri
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.content.Intent
+import android.util.Log
 import android.view.Surface
 import android.view.WindowManager
 import androidx.core.content.ContextCompat
@@ -40,8 +41,11 @@ import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
 import com.google.firebase.database.ValueEventListener
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -77,6 +81,20 @@ data class QuickCommand(
     val createdAtMs: Long,
     val createdBy: String? = null,
 )
+
+
+
+data class TelemetryState(
+    val rtdbReadErrors: Int = 0,
+    val rtdbWriteErrors: Int = 0,
+    val trackingRestarts: Int = 0,
+    val lastLocationAtMs: Long = 0L,
+    val lastTrackingRestartReason: String? = null,
+)
+
+sealed interface UiEvent {
+    data class Error(val message: String) : UiEvent
+}
 
 data class UiState(
     val isAuthReady: Boolean = false,
@@ -123,6 +141,7 @@ data class UiState(
     val isBusy: Boolean = false,
 
     val lastError: String? = null,
+    val telemetry: TelemetryState = TelemetryState(),
 )
 
 class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
@@ -142,6 +161,9 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
+    private val _events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 32)
+    val events: SharedFlow<UiEvent> = _events.asSharedFlow()
+
     private var statesListener: ValueEventListener? = null
     private var statesRef: DatabaseReference? = null
 
@@ -159,6 +181,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
 
     private var activeCommandExpiryJob: Job? = null
     private var deadReminderJob: Job? = null
+    private var trackingWatchdogJob: Job? = null
 
     private var lastSentMs: Long = 0L
     private var lastMoveMs: Long = 0L
@@ -181,6 +204,22 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
     private var _headingContinuous: Double? = null
 
     private val calculator = CompassCalculator()
+
+    private fun emitError(message: String, cause: Throwable? = null) {
+        if (cause != null) Log.w(TAG, message, cause) else Log.w(TAG, message)
+        _ui.update { it.copy(lastError = message) }
+        _events.tryEmit(UiEvent.Error(message))
+    }
+
+    private fun noteReadError(message: String) {
+        emitError(message)
+        _ui.update { it.copy(telemetry = it.telemetry.copy(rtdbReadErrors = it.telemetry.rtdbReadErrors + 1)) }
+    }
+
+    private fun noteWriteError(message: String, cause: Throwable? = null) {
+        emitError(message, cause)
+        _ui.update { it.copy(telemetry = it.telemetry.copy(rtdbWriteErrors = it.telemetry.rtdbWriteErrors + 1)) }
+    }
 
     init {
         viewModelScope.launch {
@@ -224,7 +263,8 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
                 _ui.value.teamCode?.let { startListening(it) }
             }
             .addOnFailureListener { e ->
-                _ui.update { it.copy(isAuthReady = false, lastError = "Auth error: ${e.message}") }
+                _ui.update { it.copy(isAuthReady = false) }
+                emitError("Auth error: ${e.message}")
             }
     }
 
@@ -450,7 +490,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
         if (_ui.value.isBusy) return
         val uid = _ui.value.uid
         if (uid == null) {
-            _ui.update { it.copy(lastError = "Авторизация ещё не готова. Подожди секунду и попробуй снова.") }
+            emitError("Авторизация ещё не готова. Подожди секунду и попробуй снова.")
             ensureAuth()
             return
         }
@@ -469,7 +509,8 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             kotlinx.coroutines.delay(12_000)
             val s = _ui.value
             if (s.isBusy && opNonce == myNonce && s.teamCode == null) {
-                _ui.update { it.copy(isBusy = false, lastError = "Firebase не ответил (таймаут). Проверь интернет/Rules/URL базы.") }
+                _ui.update { it.copy(isBusy = false) }
+                emitError("Firebase не ответил (таймаут). Проверь интернет/Rules/URL базы.")
             }
         }
 
@@ -513,7 +554,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
         if (_ui.value.isBusy) return
         val uid = _ui.value.uid
         if (uid == null) {
-            _ui.update { it.copy(lastError = "Авторизация ещё не готова. Подожди секунду и попробуй снова.") }
+            emitError("Авторизация ещё не готова. Подожди секунду и попробуй снова.")
             ensureAuth()
             return
         }
@@ -528,7 +569,8 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             kotlinx.coroutines.delay(12_000)
             val s = _ui.value
             if (s.isBusy && opNonce == myNonce && s.teamCode == null) {
-                _ui.update { it.copy(isBusy = false, lastError = "Firebase не ответил (таймаут). Проверь интернет/Rules/URL базы.") }
+                _ui.update { it.copy(isBusy = false) }
+                emitError("Firebase не ответил (таймаут). Проверь интернет/Rules/URL базы.")
             }
         }
 
@@ -647,7 +689,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             override fun onCancelled(error: DatabaseError) {
-                _ui.update { it.copy(lastError = "DB: ${error.message}") }
+                noteReadError("DB: ${error.message}")
             }
         }
 
@@ -674,7 +716,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 override fun onCancelled(error: DatabaseError) {
-                    _ui.update { it.copy(lastError = "DB(points): ${error.message}") }
+                    noteReadError("DB(points): ${error.message}")
                 }
             }
             pointsListener = l
@@ -701,7 +743,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 override fun onCancelled(error: DatabaseError) {
-                    _ui.update { it.copy(lastError = "DB(private): ${error.message}") }
+                    noteReadError("DB(private): ${error.message}")
                 }
             }
             privatePointsListener = l
@@ -747,7 +789,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 override fun onCancelled(error: DatabaseError) {
-                    _ui.update { it.copy(lastError = "DB(enemy): ${error.message}") }
+                    noteReadError("DB(enemy): ${error.message}")
                 }
             }
             enemyListener = l
@@ -781,7 +823,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 override fun onCancelled(error: DatabaseError) {
-                    _ui.update { it.copy(lastError = "DB(commands): ${error.message}") }
+                    noteReadError("DB(commands): ${error.message}")
                 }
             }
             commandsListener = l
@@ -883,6 +925,9 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             "sosUntilMs" to s.mySosUntilMs,
         )
         db.child("teams").child(code).child("state").child(uid).setValue(payload)
+            .addOnFailureListener { e ->
+                noteWriteError("Не удалось отправить координаты", e)
+            }
     }
 
     /**
@@ -890,7 +935,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun startTracking(mode: TrackingMode, persistMode: Boolean = true) {
         if (!_ui.value.hasLocationPermission) {
-            _ui.update { it.copy(lastError = "Нужен доступ к геолокации") }
+            emitError("Нужен доступ к геолокации")
             return
         }
         val code = _ui.value.teamCode ?: return
@@ -929,15 +974,24 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             }
             locationCallback = cb
             fused.requestLocationUpdates(request, cb, null)
+                .addOnFailureListener { e ->
+                    noteWriteError("Не удалось запустить трекинг", e)
+                }
             lastSentMs = 0L
             lastMoveMs = 0L
             lastMoveLoc = null
-            _ui.update { it.copy(isTracking = true) }
+            _ui.update {
+                it.copy(
+                    isTracking = true,
+                    telemetry = it.telemetry.copy(lastLocationAtMs = System.currentTimeMillis()),
+                )
+            }
             ContextCompat.startForegroundService(
                 getApplication(),
                 Intent(getApplication(), TrackingService::class.java),
             )
             if (_ui.value.playerMode == PlayerMode.DEAD) startDeadReminder()
+            startTrackingWatchdog()
         }
 
         // warm up (fast last known)
@@ -987,6 +1041,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 me = point,
                 isAnchored = anchored,
+                telemetry = it.telemetry.copy(lastLocationAtMs = now),
             )
         }
 
@@ -1016,8 +1071,38 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
         locationCallback = null
         stopHeading()
         stopDeadReminder()
+        stopTrackingWatchdog()
         getApplication<Application>().stopService(Intent(getApplication(), TrackingService::class.java))
         _ui.update { it.copy(isTracking = false) }
+    }
+
+    private fun startTrackingWatchdog() {
+        trackingWatchdogJob?.cancel()
+        trackingWatchdogJob = viewModelScope.launch {
+            while (true) {
+                delay(20_000L)
+                val s = _ui.value
+                if (!s.isTracking) continue
+                val staleForMs = System.currentTimeMillis() - s.telemetry.lastLocationAtMs
+                if (s.telemetry.lastLocationAtMs > 0L && staleForMs > 45_000L) {
+                    Log.w(TAG, "Tracking watchdog restart, staleForMs=$staleForMs")
+                    _ui.update {
+                        it.copy(
+                            telemetry = it.telemetry.copy(
+                                trackingRestarts = it.telemetry.trackingRestarts + 1,
+                                lastTrackingRestartReason = "No location for ${staleForMs}ms",
+                            )
+                        )
+                    }
+                    restartTracking()
+                }
+            }
+        }
+    }
+
+    private fun stopTrackingWatchdog() {
+        trackingWatchdogJob?.cancel()
+        trackingWatchdogJob = null
     }
 
     fun dismissError() {
@@ -1109,5 +1194,9 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun generateCode(): String {
         return Random.nextInt(0, 1_000_000).toString().padStart(6, '0')
+    }
+
+    companion object {
+        private const val TAG = "TeamCompassVM"
     }
 }

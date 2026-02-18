@@ -1,0 +1,55 @@
+{
+  "rules": {
+    "teams": {
+      "$teamCode": {
+        ".read": "auth != null && root.child('teams').child($teamCode).child('members').child(auth.uid).exists()",
+        "meta": {
+          ".write": "auth != null && (!data.exists() || data.child('createdBy').val() === auth.uid)",
+          "createdAtMs": { ".validate": "newData.isNumber()" },
+          "createdBy": { ".validate": "newData.isString() && newData.val() === auth.uid" },
+          "isLocked": { ".validate": "newData.isBoolean()" },
+          "expiresAtMs": { ".validate": "newData.isNumber()" },
+          "joinSalt": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-fA-F]{16,}$/)" },
+          "joinHash": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-fA-F]{64}$/)" }
+        },
+        "members": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            "callsign": { ".validate": "newData.isString() && newData.val().length <= 24" },
+            "joinedAtMs": { ".validate": "newData.isNumber() || newData.val() === now" }
+          }
+        },
+        "state": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && root.child('teams').child($teamCode).child('members').child($uid).exists()",
+            ".validate": "newData.hasChildren(['callsign','lat','lon','acc','speed','ts','mode'])"
+          }
+        },
+        "points": {
+          "$pointId": {
+            ".write": "auth != null && root.child('teams').child($teamCode).child('members').child(auth.uid).exists()",
+            ".validate": "newData.hasChildren(['lat','lon','label','icon','createdAtMs','createdBy']) || (!newData.exists())"
+          }
+        },
+        "privatePoints": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            "$pointId": {
+              ".write": "auth != null && auth.uid === $uid"
+            }
+          }
+        },
+        "enemyPings": {
+          "$pingId": {
+            ".write": "auth != null && root.child('teams').child($teamCode).child('members').child(auth.uid).exists()"
+          }
+        },
+        "commands": {
+          "$commandId": {
+            ".write": "auth != null && root.child('teams').child($teamCode).child('members').child(auth.uid).exists()"
+          }
+        }
+      }
+    }
+  }
+}
