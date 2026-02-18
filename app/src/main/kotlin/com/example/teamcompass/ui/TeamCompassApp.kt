@@ -18,11 +18,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -48,7 +48,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -76,7 +75,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -96,10 +97,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
 import java.util.Locale
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
@@ -108,6 +107,7 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.Canvas
@@ -123,6 +123,9 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
+import com.example.teamcompass.ui.theme.AlphaTokens
+import com.example.teamcompass.ui.theme.ControlSize
+import com.example.teamcompass.ui.theme.Radius
 
 private const val ROUTE_SPLASH = "splash"
 private const val ROUTE_JOIN = "join"
@@ -172,14 +175,14 @@ fun TeamCompassApp(vm: TeamCompassViewModel = viewModel()) {
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
+            .systemBarsPadding()
         ) {
             NavHost(navController = nav, startDestination = ROUTE_SPLASH) {
                 composable(ROUTE_SPLASH) {
@@ -417,7 +420,7 @@ private fun JoinScreen(
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(Spacing.lg - Spacing.xs),
+                shape = RoundedCornerShape(Radius.button),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(Modifier.padding(Spacing.md)) {
@@ -436,6 +439,7 @@ private fun JoinScreen(
                         singleLine = true,
                         enabled = !isBusy,
                         isError = callsignError,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         supportingText = {
                             if (callsignError) {
                                 Text("Допустимо 3–16 символов: буквы, цифры, _ или -")
@@ -448,69 +452,91 @@ private fun JoinScreen(
 
                     Spacer(Modifier.height(Spacing.sm))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-                    ) {
-                        Card(
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(Spacing.md),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                        ) {
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                Text("Новая команда", fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    "Создать новый код и поделиться им с группой.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Button(
-                                    onClick = onCreate,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(Spacing.sm),
-                                    enabled = !isBusy && callsignValid
-                                ) {
-                                    Icon(Icons.Default.Groups, contentDescription = null)
-                                    Spacer(Modifier.width(Spacing.xs))
-                                    Text("Создать")
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val stacked = maxWidth < 360.dp
+                        val cardsModifier = if (stacked) Modifier.fillMaxWidth() else Modifier.weight(1f)
+
+                        val cardsContent: @Composable () -> Unit = {
+                            Card(
+                                modifier = cardsModifier,
+                                shape = RoundedCornerShape(Spacing.md),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = AlphaTokens.cardStrong))
+                            ) {
+                                Column(Modifier.padding(Spacing.sm), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                    Text("Новая команда", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "Создать новый код и поделиться им с группой.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Button(
+                                        onClick = onCreate,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(Radius.button),
+                                        enabled = !isBusy && callsignValid
+                                    ) {
+                                        Icon(Icons.Default.Groups, contentDescription = "Создать команду")
+                                        Spacer(Modifier.width(Spacing.xs))
+                                        Text("Создать")
+                                    }
+                                }
+                            }
+
+                            Card(
+                                modifier = cardsModifier,
+                                shape = RoundedCornerShape(Spacing.md),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = AlphaTokens.cardSubtle))
+                            ) {
+                                Column(Modifier.padding(Spacing.sm), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                    Text("Вход по коду", fontWeight = FontWeight.SemiBold)
+                                    OutlinedTextField(
+                                        value = code,
+                                        onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                                        label = { Text("Код (6 цифр)") },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = KeyboardType.Number,
+                                            imeAction = ImeAction.Done
+                                        ),
+                                        keyboardActions = KeyboardActions(
+                                            onDone = {
+                                                if (!isBusy && callsignValid && codeNormalized.length == 6) {
+                                                    onJoin(codeNormalized)
+                                                }
+                                            }
+                                        ),
+                                        enabled = !isBusy,
+                                        isError = codeError,
+                                        supportingText = {
+                                            if (codeError) {
+                                                Text("Код должен содержать 6 цифр")
+                                            } else {
+                                                Text("Введите 6 цифр без пробелов")
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    FilledTonalButton(
+                                        onClick = { onJoin(codeNormalized) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(Radius.button),
+                                        enabled = !isBusy && callsignValid && codeNormalized.length == 6
+                                    ) {
+                                        Icon(Icons.Default.GpsFixed, contentDescription = "Войти в команду")
+                                        Spacer(Modifier.width(Spacing.xs))
+                                        Text("Войти")
+                                    }
                                 }
                             }
                         }
 
-                        Card(
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(Spacing.md),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                        ) {
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                Text("Вход по коду", fontWeight = FontWeight.SemiBold)
-                                OutlinedTextField(
-                                    value = code,
-                                    onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                                    label = { Text("Код (6 цифр)") },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    enabled = !isBusy,
-                                    isError = codeError,
-                                    supportingText = {
-                                        if (codeError) {
-                                            Text("Код должен содержать 6 цифр")
-                                        } else {
-                                            Text("Введи 6 цифр без пробелов")
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                FilledTonalButton(
-                                    onClick = { onJoin(codeNormalized) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(Spacing.sm),
-                                    enabled = !isBusy && callsignValid && codeNormalized.length == 6
-                                ) {
-                                    Icon(Icons.Default.GpsFixed, contentDescription = null)
-                                    Spacer(Modifier.width(Spacing.xs))
-                                    Text("Войти")
-                                }
+                        if (stacked) {
+                            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                cardsContent()
+                            }
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                cardsContent()
                             }
                         }
                     }
@@ -534,7 +560,7 @@ private fun JoinScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.28f))
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = AlphaTokens.scrim))
             )
         }
 
@@ -545,7 +571,7 @@ private fun JoinScreen(
             exit = fadeOut(tween(120))
         ) {
             Card(
-                shape = RoundedCornerShape(Spacing.lg - Spacing.xs),
+                shape = RoundedCornerShape(Radius.button),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Row(
@@ -604,7 +630,7 @@ private fun CompassScreen(
 
     val targets = remember(state.players, state.me, state.myHeadingDeg, now) { targetsProvider(now) }
 
-    var showList by remember { mutableStateOf(false) }
+    var showTargetsSheet by remember { mutableStateOf(false) }
     var listQuery by remember { mutableStateOf("") }
     var sortMode by remember { mutableStateOf(TargetsSortMode.DISTANCE) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -885,14 +911,14 @@ private fun CompassScreen(
         Card(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(start = 10.dp),
-            shape = RoundedCornerShape(22.dp),
+                .padding(start = Spacing.xs),
+            shape = RoundedCornerShape(Radius.lg),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = AlphaTokens.overlay)
             )
         ) {
             Column(
-                modifier = Modifier.padding(10.dp),
+                modifier = Modifier.padding(Spacing.xs),
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -936,21 +962,21 @@ private fun CompassScreen(
         Card(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 10.dp),
-            shape = RoundedCornerShape(22.dp),
+                .padding(end = Spacing.xs),
+            shape = RoundedCornerShape(Radius.lg),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = AlphaTokens.overlay)
             )
         ) {
             Column(
-                modifier = Modifier.padding(10.dp),
+                modifier = Modifier.padding(Spacing.xs),
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 RailButton(
                     icon = Icons.Default.Groups,
                     label = "Список",
-                    onClick = { showList = !showList }
+                    onClick = { showTargetsSheet = true }
                 )
 
                 Box {
@@ -1064,9 +1090,9 @@ private fun CompassScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(top = 10.dp),
-                shape = RoundedCornerShape(999.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                    .padding(top = Spacing.xs),
+                shape = RoundedCornerShape(Radius.pill),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = AlphaTokens.overlay))
             ) {
                 val txt = when (cmd.type) {
                     QuickCommandType.RALLY -> "Сбор на точке"
@@ -1075,35 +1101,29 @@ private fun CompassScreen(
                 }
                 Text(
                     txt,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
                     fontWeight = FontWeight.SemiBold
                 )
             }
         }
 
-        // LIST PANEL (overlay; radar remains full screen)
-        AnimatedVisibility(
-            visible = showList,
-            enter = fadeIn(tween(160)),
-            exit = fadeOut(tween(160))
-        ) {
-            Card(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 92.dp, top = 10.dp, bottom = 10.dp)
-                    .widthIn(max = 360.dp)
-                    .fillMaxHeight(),
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+        if (showTargetsSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showTargetsSheet = false }
             ) {
-                Column(Modifier.fillMaxSize().padding(12.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 540.dp)
+                        .padding(horizontal = Spacing.md, vertical = Spacing.sm)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Список", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))
-                        IconButton(onClick = { showList = false }) {
+                        IconButton(onClick = { showTargetsSheet = false }) {
                             Icon(Icons.Default.Close, contentDescription = "Закрыть список")
                         }
                     }
@@ -1121,7 +1141,7 @@ private fun CompassScreen(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
                     ) {
                         AssistChip(
                             onClick = { sortMode = TargetsSortMode.DISTANCE },
@@ -1144,7 +1164,7 @@ private fun CompassScreen(
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                         ) {
                             items(filteredTargets, key = { it.uid }) { t ->
                                 TargetRow(t)
@@ -1466,7 +1486,7 @@ private fun RadarPointMarker(marker: PointMarkerUi) {
     val bg = if (marker.isTeam) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
     val fg = if (marker.isTeam) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondary
 
-    val halfPx = with(androidx.compose.ui.platform.LocalDensity.current) { 22.dp.toPx() }
+    val halfPx = with(androidx.compose.ui.platform.LocalDensity.current) { (ControlSize.pointMarker / 2).toPx() }
     val x = marker.posPx.x
     val y = marker.posPx.y
 
@@ -1477,9 +1497,9 @@ private fun RadarPointMarker(marker: PointMarkerUi) {
     ) {
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(ControlSize.pointMarker)
                 .clip(CircleShape)
-                .background(bg.copy(alpha = 0.88f)),
+                .background(bg.copy(alpha = AlphaTokens.marker)),
             contentAlignment = Alignment.Center
         ) {
             Icon(icon.vector, contentDescription = marker.label, tint = fg)
@@ -1491,8 +1511,8 @@ private fun RadarPointMarker(marker: PointMarkerUi) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.80f))
+                    .clip(RoundedCornerShape(Radius.sm))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = AlphaTokens.labelBackground))
                     .padding(horizontal = 8.dp, vertical = 3.dp)
             )
         }
@@ -1530,8 +1550,8 @@ private fun RailButton(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         FilledTonalIconButton(
             onClick = onClick,
-            modifier = Modifier.size(56.dp),
-            shape = RoundedCornerShape(Spacing.lg - Spacing.xs)
+            modifier = Modifier.size(ControlSize.railButton),
+            shape = RoundedCornerShape(Radius.button)
         ) {
             Icon(icon, contentDescription = label)
         }
