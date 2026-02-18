@@ -90,7 +90,8 @@ object KmzMapImporter {
         val out = File(root, cleaned)
         val canonRoot = root.canonicalPath
         val canonOut = out.canonicalPath
-        require(canonOut.startsWith(canonRoot)) { "Недопустимый путь в KMZ" }
+        val rootPrefix = "$canonRoot${File.separator}"
+        require(canonOut == canonRoot || canonOut.startsWith(rootPrefix)) { "Недопустимый путь в KMZ" }
         return out
     }
 
