@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import android.util.Log
 
 class TrackingService : Service() {
 
@@ -27,12 +28,14 @@ class TrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
+        Log.i(TAG, "TrackingService started, startId=$startId flags=$flags")
+        return START_REDELIVER_INTENT
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        Log.w(TAG, "TrackingService destroyed")
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -47,6 +50,7 @@ class TrackingService : Service() {
     }
 
     companion object {
+        private const val TAG = "TrackingService"
         private const val CHANNEL_ID = "tracking_channel"
         private const val NOTIFICATION_ID = 101
     }

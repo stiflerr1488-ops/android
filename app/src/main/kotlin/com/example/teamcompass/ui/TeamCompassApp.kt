@@ -88,6 +88,7 @@ import com.example.teamcompass.core.LocationPoint
 import com.example.teamcompass.core.Staleness
 import com.example.teamcompass.core.TrackingMode
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -136,10 +137,12 @@ fun TeamCompassApp(vm: TeamCompassViewModel = viewModel()) {
     val backStackEntry by nav.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route
 
-    LaunchedEffect(state.lastError) {
-        val msg = state.lastError ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(msg)
-        vm.dismissError()
+    LaunchedEffect(vm) {
+        vm.events.collect { event ->
+            when (event) {
+                is UiEvent.Error -> snackbarHostState.showSnackbar(event.message)
+            }
+        }
     }
 
     // Keep navigation synced with team presence (but don't yank user out of Settings).
