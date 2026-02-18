@@ -57,7 +57,7 @@ fun SettingsScreen(
                     }
                 },
                 actions = {
-                    Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Default.Tune, contentDescription = "Параметры", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.padding(Spacing.xs))
                 },
                 scrollBehavior = scrollBehavior
@@ -123,9 +123,21 @@ fun SettingsScreen(
                 Column(Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                     Text("Диагностика", fontWeight = FontWeight.SemiBold)
                     Text(
+                        "Сеть/база",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
                         "Ошибки чтения: ${state.telemetry.rtdbReadErrors} · Ошибки записи: ${state.telemetry.rtdbWriteErrors}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "Трекинг",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         "Перезапуски трекинга: ${state.telemetry.trackingRestarts}",

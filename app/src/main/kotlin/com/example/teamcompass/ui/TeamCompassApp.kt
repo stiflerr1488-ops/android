@@ -144,7 +144,10 @@ fun TeamCompassApp(vm: TeamCompassViewModel = viewModel()) {
     LaunchedEffect(vm) {
         vm.events.collect { event ->
             when (event) {
-                is UiEvent.Error -> snackbarHostState.showSnackbar(event.message)
+                is UiEvent.Error -> snackbarHostState.showSnackbar(
+                    message = event.message,
+                    actionLabel = "Повторить"
+                )
             }
         }
     }
@@ -235,6 +238,7 @@ fun TeamCompassApp(vm: TeamCompassViewModel = viewModel()) {
                             onMapEnabled = vm::setMapEnabled,
                             onMapOpacity = vm::setMapOpacity,
                             onClearMap = vm::clearTacticalMap,
+                            onMarkHelpSeen = vm::markCompassHelpSeen,
                         )
                     }
                 }
@@ -298,8 +302,8 @@ private fun TacticalSplash(
     LaunchedEffect(isAuthReady) {
         if (!isAuthReady || started) return@LaunchedEffect
         started = true
-        // keep logo visible a little for "smooth" feel
-        delay(650)
+        // Keep splash short; do not block when auth is already ready.
+        delay(250)
         latestOnDone(if (hasTeam) ROUTE_COMPASS else ROUTE_JOIN)
     }
 
@@ -353,7 +357,7 @@ private fun LoadingScreen() {
     Column(
         Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .padding(Spacing.lg),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -376,7 +380,8 @@ private fun JoinScreen(
     val normalizedCallsign = callsign.trim()
     val callsignValid = normalizedCallsign.length in 3..16 && normalizedCallsign.all { it.isLetterOrDigit() || it == '_' || it == '-' }
     val callsignError = normalizedCallsign.isNotEmpty() && !callsignValid
-    val codeError = code.isNotEmpty() && code.length != 6
+    val codeNormalized = code.filter(Char::isDigit).take(6)
+    val codeError = codeNormalized.isNotEmpty() && codeNormalized.length != 6
 
     Box(
         modifier = Modifier
@@ -490,15 +495,17 @@ private fun JoinScreen(
                                     supportingText = {
                                         if (codeError) {
                                             Text("Код должен содержать 6 цифр")
+                                        } else {
+                                            Text("Введи 6 цифр без пробелов")
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 FilledTonalButton(
-                                    onClick = { onJoin(code) },
+                                    onClick = { onJoin(codeNormalized) },
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(Spacing.sm),
-                                    enabled = !isBusy && callsignValid && code.length == 6
+                                    enabled = !isBusy && callsignValid && codeNormalized.length == 6
                                 ) {
                                     Icon(Icons.Default.GpsFixed, contentDescription = null)
                                     Spacer(Modifier.width(Spacing.xs))
@@ -516,6 +523,19 @@ private fun JoinScreen(
                     )
                 }
             }
+        }
+
+        AnimatedVisibility(
+            visible = isBusy,
+            modifier = Modifier.fillMaxSize(),
+            enter = fadeIn(tween(120)),
+            exit = fadeOut(tween(120))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.28f))
+            )
         }
 
         AnimatedVisibility(
@@ -564,6 +584,7 @@ private fun CompassScreen(
     onMapEnabled: (Boolean) -> Unit,
     onMapOpacity: (Float) -> Unit,
     onClearMap: () -> Unit,
+    onMarkHelpSeen: () -> Unit,
 ) {
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -611,7 +632,11 @@ private fun CompassScreen(
     var showStatusDialog by remember { mutableStateOf(false) }
     var showQuickCmdDialog by remember { mutableStateOf(false) }
     var showMapsDialog by remember { mutableStateOf(false) }
-    var showHelpDialog by remember { mutableStateOf(false) }
+    var showHelpDialog by remember { mutableStateOf(state.showCompassHelpOnce) }
+
+    LaunchedEffect(state.showCompassHelpOnce) {
+        if (state.showCompassHelpOnce) showHelpDialog = true
+    }
 
     // KMZ editing layer (points) — similar to the tactical map editor UI.
     var editMode by remember { mutableStateOf(false) }
@@ -1159,9 +1184,15 @@ private fun CompassScreen(
 
         if (showHelpDialog) {
             androidx.compose.material3.AlertDialog(
-                onDismissRequest = { showHelpDialog = false },
+                onDismissRequest = {
+                    showHelpDialog = false
+                    onMarkHelpSeen()
+                },
                 confirmButton = {
-                    FilledTonalButton(onClick = { showHelpDialog = false }) { Text("Понятно") }
+                    FilledTonalButton(onClick = {
+                        showHelpDialog = false
+                        onMarkHelpSeen()
+                    }) { Text("Понятно") }
                 },
                 title = { Text("Как пользоваться радаром") },
                 text = {

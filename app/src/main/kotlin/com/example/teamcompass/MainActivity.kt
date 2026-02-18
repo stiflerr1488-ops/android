@@ -3,6 +3,7 @@ package com.example.teamcompass
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.teamcompass.ui.TeamCompassApp
 import com.example.teamcompass.ui.theme.TeamCompassTheme
@@ -21,7 +22,7 @@ class MainActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
         setContent {
-            TeamCompassTheme(darkTheme = true) {
+            TeamCompassTheme(darkTheme = isSystemInDarkTheme()) {
                 TeamCompassApp()
             }
         }

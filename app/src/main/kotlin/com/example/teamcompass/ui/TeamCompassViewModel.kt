@@ -139,6 +139,7 @@ data class UiState(
 
     // UI helper
     val isBusy: Boolean = false,
+    val showCompassHelpOnce: Boolean = true,
 
     val lastError: String? = null,
     val telemetry: TelemetryState = TelemetryState(),
@@ -230,6 +231,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
             val gameDist = prefs.gameDistanceMFlow.first()
             val silentInt = prefs.silentIntervalSecFlow.first()
             val silentDist = prefs.silentDistanceMFlow.first()
+            val showHelpOnce = prefs.showCompassHelpOnceFlow.first()
 
             _ui.update {
                 it.copy(
@@ -240,6 +242,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
                     gameDistanceM = gameDist,
                     silentIntervalSec = silentInt,
                     silentDistanceM = silentDist,
+                    showCompassHelpOnce = showHelpOnce,
                 )
             }
 
@@ -661,6 +664,12 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
                     _ui.update { it.copy(isBusy = false, lastError = "Ошибка сети: ${e.message}") }
                 }
             }
+    }
+
+
+    fun markCompassHelpSeen() {
+        _ui.update { it.copy(showCompassHelpOnce = false) }
+        viewModelScope.launch { prefs.setShowCompassHelpOnce(false) }
     }
 
     fun leaveTeam() {
