@@ -29,13 +29,12 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.example.teamcompass.core.TrackingMode
+import com.example.teamcompass.ui.theme.Spacing
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,7 +58,7 @@ fun SettingsScreen(
                 },
                 actions = {
                     Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.padding(6.dp))
+                    Spacer(Modifier.padding(Spacing.xs))
                 },
                 scrollBehavior = scrollBehavior
             )
@@ -69,15 +68,15 @@ fun SettingsScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(Spacing.lg),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     Text("Режим по умолчанию", fontWeight = FontWeight.SemiBold)
                     Text(
                         "Можно быстро переключать в шапке компаса. Изменения сохраняются на телефоне.",
@@ -118,24 +117,24 @@ fun SettingsScreen(
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(Spacing.lg),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                     Text("Диагностика", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Read errors: ${state.telemetry.rtdbReadErrors} · Write errors: ${state.telemetry.rtdbWriteErrors}",
+                        "Ошибки чтения: ${state.telemetry.rtdbReadErrors} · Ошибки записи: ${state.telemetry.rtdbWriteErrors}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        "Tracking restarts: ${state.telemetry.trackingRestarts}",
+                        "Перезапуски трекинга: ${state.telemetry.trackingRestarts}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     state.telemetry.lastTrackingRestartReason?.let { reason ->
                         Text(
-                            "Last restart reason: $reason",
+                            "Причина последнего перезапуска: $reason",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -162,7 +161,7 @@ private fun BinaryChoiceButtons(
     onLeftClick: () -> Unit,
     onRightClick: () -> Unit,
 ) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         val w = Modifier.weight(1f)
         if (leftSelected) {
             Button(onClick = onLeftClick, modifier = w) { Text(leftText) }
@@ -189,10 +188,10 @@ private fun PolicyCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(Spacing.lg),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             Text(title, fontWeight = FontWeight.SemiBold)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
