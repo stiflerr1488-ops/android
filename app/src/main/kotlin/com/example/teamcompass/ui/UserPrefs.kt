@@ -1,6 +1,7 @@
 package com.example.teamcompass.ui
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -20,6 +21,7 @@ class UserPrefs(private val context: Context) {
     private val KEY_GAME_DISTANCE_M = intPreferencesKey("gameDistanceM")
     private val KEY_SILENT_INTERVAL_SEC = intPreferencesKey("silentIntervalSec")
     private val KEY_SILENT_DISTANCE_M = intPreferencesKey("silentDistanceM")
+    private val KEY_SHOW_COMPASS_HELP_ONCE = booleanPreferencesKey("showCompassHelpOnce")
 
     val callsignFlow: Flow<String> = context.dataStore.data.map { it[KEY_CALLSIGN] ?: "" }
     val teamCodeFlow: Flow<String?> = context.dataStore.data.map { it[KEY_TEAM] }
@@ -35,6 +37,7 @@ class UserPrefs(private val context: Context) {
     val gameDistanceMFlow: Flow<Int> = context.dataStore.data.map { it[KEY_GAME_DISTANCE_M] ?: 10 }
     val silentIntervalSecFlow: Flow<Int> = context.dataStore.data.map { it[KEY_SILENT_INTERVAL_SEC] ?: 10 }
     val silentDistanceMFlow: Flow<Int> = context.dataStore.data.map { it[KEY_SILENT_DISTANCE_M] ?: 30 }
+    val showCompassHelpOnceFlow: Flow<Boolean> = context.dataStore.data.map { it[KEY_SHOW_COMPASS_HELP_ONCE] ?: true }
 
     suspend fun setCallsign(value: String) {
         context.dataStore.edit { it[KEY_CALLSIGN] = value }
@@ -62,5 +65,9 @@ class UserPrefs(private val context: Context) {
             it[KEY_SILENT_INTERVAL_SEC] = intervalSec
             it[KEY_SILENT_DISTANCE_M] = distanceM
         }
+    }
+
+    suspend fun setShowCompassHelpOnce(value: Boolean) {
+        context.dataStore.edit { it[KEY_SHOW_COMPASS_HELP_ONCE] = value }
     }
 }
