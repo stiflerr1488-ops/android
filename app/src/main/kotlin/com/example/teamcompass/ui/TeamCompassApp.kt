@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -608,6 +609,7 @@ private fun CompassScreen(
     var showStatusDialog by remember { mutableStateOf(false) }
     var showQuickCmdDialog by remember { mutableStateOf(false) }
     var showMapsDialog by remember { mutableStateOf(false) }
+    var showHelpDialog by remember { mutableStateOf(false) }
 
     // KMZ editing layer (points) — similar to the tactical map editor UI.
     var editMode by remember { mutableStateOf(false) }
@@ -940,6 +942,14 @@ private fun CompassScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("Как пользоваться") },
+                            onClick = {
+                                menuExpanded = false
+                                showHelpDialog = true
+                            },
+                            leadingIcon = { Icon(Icons.Default.HelpOutline, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
                             text = { Text(if (editMode) "Редактирование: ВКЛ" else "Редактирование: ВЫКЛ") },
                             onClick = {
                                 menuExpanded = false
@@ -1137,6 +1147,34 @@ private fun CompassScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         FilledTonalButton(onClick = onCopyCode) { Text("Копировать код") }
+                    }
+                }
+            )
+        }
+
+        if (showHelpDialog) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showHelpDialog = false },
+                confirmButton = {
+                    FilledTonalButton(onClick = { showHelpDialog = false }) { Text("Понятно") }
+                },
+                title = { Text("Как пользоваться радаром") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        Text("Жесты", fontWeight = FontWeight.SemiBold)
+                        Text("• Pinch — изменить радиус радара (10–1000 м).", style = MaterialTheme.typography.bodySmall)
+                        Text("• Tap при «Противник: ВКЛ» — поставить ореол на 60 секунд.", style = MaterialTheme.typography.bodySmall)
+                        Text("• Long press в режиме редактирования — действия с точкой.", style = MaterialTheme.typography.bodySmall)
+                        Divider()
+                        Text("Легенда", fontWeight = FontWeight.SemiBold)
+                        Text("• Командные точки — общие для команды.", style = MaterialTheme.typography.bodySmall)
+                        Text("• Личные точки — видны только тебе.", style = MaterialTheme.typography.bodySmall)
+                        Text("• SOS в списке/радаре имеет повышенный приоритет.", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            "Подсказка: открой меню и переключи «Противник» или «Редактирование» в зависимости от задачи.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             )
