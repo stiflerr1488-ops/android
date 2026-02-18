@@ -83,6 +83,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.teamcompass.R
+import com.example.teamcompass.ui.theme.Spacing
 import com.example.teamcompass.core.CompassTarget
 import com.example.teamcompass.core.LocationPoint
 import com.example.teamcompass.core.Staleness
@@ -327,7 +328,7 @@ private fun TacticalSplash(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(Spacing.lg - Spacing.xs))
 
             AnimatedVisibility(
                 visible = !isAuthReady,
@@ -369,133 +370,169 @@ private fun JoinScreen(
     savedCodeHint: String?
 ) {
     var code by remember { mutableStateOf(savedCodeHint ?: "") }
+    val normalizedCallsign = callsign.trim()
+    val callsignValid = normalizedCallsign.length in 3..16 && normalizedCallsign.all { it.isLetterOrDigit() || it == '_' || it == '-' }
+    val callsignError = normalizedCallsign.isNotEmpty() && !callsignValid
+    val codeError = code.isNotEmpty() && code.length != 6
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(20.dp),
-        verticalArrangement = Arrangement.Center
+            .padding(Spacing.md)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_compass),
-                    contentDescription = null,
-                    modifier = Modifier.size(36.dp)
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text("TeamCompass", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("Командный радар для леса", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-
-        Spacer(Modifier.height(18.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        Column(
+            verticalArrangement = Arrangement.Center
         ) {
-            Column(Modifier.padding(16.dp)) {
-                Text("Вход в команду", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Быстрый горизонтальный вход: слева создать, справа войти по коду.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Spacer(Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = callsign,
-                    onValueChange = onCallsignChange,
-                    label = { Text("Позывной") },
-                    singleLine = true,
-                    enabled = !isBusy,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(Spacing.xl + Spacing.xs)
+                        .clip(RoundedCornerShape(Spacing.md))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Card(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                    Image(
+                        painter = painterResource(R.drawable.ic_compass),
+                        contentDescription = null,
+                        modifier = Modifier.size(Spacing.lg + Spacing.xs)
+                    )
+                }
+                Spacer(Modifier.width(Spacing.sm))
+                Column {
+                    Text("TeamCompass", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text("Командный радар для леса", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            Spacer(Modifier.height(Spacing.lg - Spacing.xs))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(Spacing.lg - Spacing.xs),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(Modifier.padding(Spacing.md)) {
+                    Text("Вход в команду", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Шаг 1 из 2: укажите позывной. Затем создайте команду или войдите по коду.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+
+                    OutlinedTextField(
+                        value = callsign,
+                        onValueChange = onCallsignChange,
+                        label = { Text("Позывной") },
+                        singleLine = true,
+                        enabled = !isBusy,
+                        isError = callsignError,
+                        supportingText = {
+                            if (callsignError) {
+                                Text("Допустимо 3–16 символов: буквы, цифры, _ или -")
+                            } else {
+                                Text("3–16 символов: буквы, цифры, _ или -")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(Spacing.sm))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
                     ) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Новая команда", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Создать новый код и поделиться им с группой.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Button(
-                                onClick = onCreate,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                enabled = !isBusy
-                            ) {
-                                if (isBusy) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Создаю…")
-                                } else {
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(Spacing.md),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                Text("Новая команда", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Создать новый код и поделиться им с группой.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Button(
+                                    onClick = onCreate,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(Spacing.sm),
+                                    enabled = !isBusy && callsignValid
+                                ) {
                                     Icon(Icons.Default.Groups, contentDescription = null)
-                                    Spacer(Modifier.width(8.dp))
+                                    Spacer(Modifier.width(Spacing.xs))
                                     Text("Создать")
+                                }
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(Spacing.md),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                Text("Вход по коду", fontWeight = FontWeight.SemiBold)
+                                OutlinedTextField(
+                                    value = code,
+                                    onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                                    label = { Text("Код (6 цифр)") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    enabled = !isBusy,
+                                    isError = codeError,
+                                    supportingText = {
+                                        if (codeError) {
+                                            Text("Код должен содержать 6 цифр")
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                FilledTonalButton(
+                                    onClick = { onJoin(code) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(Spacing.sm),
+                                    enabled = !isBusy && callsignValid && code.length == 6
+                                ) {
+                                    Icon(Icons.Default.GpsFixed, contentDescription = null)
+                                    Spacer(Modifier.width(Spacing.xs))
+                                    Text("Войти")
                                 }
                             }
                         }
                     }
 
-                    Card(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                    ) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Вход по коду", fontWeight = FontWeight.SemiBold)
-                            OutlinedTextField(
-                                value = code,
-                                onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                                label = { Text("Код (6 цифр)") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                enabled = !isBusy,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            FilledTonalButton(
-                                onClick = { onJoin(code) },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                enabled = !isBusy && code.length == 6
-                            ) {
-                                Icon(Icons.Default.GpsFixed, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Войти")
-                            }
-                        }
-                    }
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(
+                        "Позывной сохраняется на устройстве. Код можно отправить в чат.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
+            }
+        }
 
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Позывной сохраняется на устройстве. Код можно просто скинуть в чат.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall
-                )
+        AnimatedVisibility(
+            visible = isBusy,
+            modifier = Modifier.align(Alignment.Center),
+            enter = fadeIn(tween(120)),
+            exit = fadeOut(tween(120))
+        ) {
+            Card(
+                shape = RoundedCornerShape(Spacing.lg - Spacing.xs),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = Spacing.lg - Spacing.xs, vertical = Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(Spacing.md + Spacing.xs), strokeWidth = 2.dp)
+                    Text("Подключаем к команде…", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }
@@ -824,7 +861,7 @@ private fun CompassScreen(
         ) {
             Column(
                 modifier = Modifier.padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (!state.hasLocationPermission) {
@@ -875,7 +912,7 @@ private fun CompassScreen(
         ) {
             Column(
                 modifier = Modifier.padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 RailButton(
@@ -1030,7 +1067,7 @@ private fun CompassScreen(
                             Icon(Icons.Default.Close, contentDescription = "Close")
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(Spacing.xs))
 
                     OutlinedTextField(
                         value = listQuery,
@@ -1040,7 +1077,7 @@ private fun CompassScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(Spacing.xs))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1056,7 +1093,7 @@ private fun CompassScreen(
                         )
                     }
 
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(Spacing.xs))
 
                     if (filteredTargets.isEmpty()) {
                         Text(
@@ -1111,7 +1148,7 @@ private fun CompassScreen(
                 confirmButton = { },
                 title = { Text("Быстрые команды") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         FilledTonalButton(onClick = { onQuickCommand(QuickCommandType.RALLY); showQuickCmdDialog = false }) { Text("Сбор на точке") }
                         FilledTonalButton(onClick = { onQuickCommand(QuickCommandType.RETREAT); showQuickCmdDialog = false }) { Text("Отходим") }
                         FilledTonalButton(onClick = { onQuickCommand(QuickCommandType.ATTACK); showQuickCmdDialog = false }) { Text("Атакуем") }
@@ -1132,7 +1169,7 @@ private fun CompassScreen(
                 onDismissRequest = { pointAction = null },
                 title = { Text(m.label) },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         val scope = if (m.isTeam) "Командная" else "Личная"
                         Text("$scope точка", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                         if (m.isTeam && !isAuthor) {
@@ -1224,7 +1261,7 @@ private fun CompassScreen(
                     FilledTonalButton(onClick = { pointDialog = null }) { Text("Отмена") }
                 },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         OutlinedTextField(
                             value = label,
                             onValueChange = { label = it.take(24) },
@@ -1241,7 +1278,7 @@ private fun CompassScreen(
                                         FilledTonalIconButton(
                                             onClick = { iconRaw = ic.raw },
                                             modifier = Modifier.size(54.dp),
-                                            shape = RoundedCornerShape(16.dp)
+                                            shape = RoundedCornerShape(Spacing.md)
                                         ) {
                                             Icon(ic.vector, contentDescription = ic.label)
                                         }
@@ -1285,7 +1322,7 @@ private fun CompassScreen(
                 },
                 title = { Text("Карты (KMZ)") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         val m = state.activeMap
                         if (m == null) {
                             Text(
@@ -1312,7 +1349,7 @@ private fun CompassScreen(
                                 )
                             }
 
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                                 Text("Показывать")
                                 androidx.compose.material3.Switch(
                                     checked = state.mapEnabled,
@@ -1397,7 +1434,7 @@ private fun BinaryChoiceButtons(
     onLeftClick: () -> Unit,
     onRightClick: () -> Unit,
 ) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         val w = Modifier.weight(1f)
         if (leftSelected) {
             Button(onClick = onLeftClick, modifier = w) { Text(leftText) }
@@ -1420,7 +1457,7 @@ private fun RailButton(
         FilledTonalIconButton(
             onClick = onClick,
             modifier = Modifier.size(56.dp),
-            shape = RoundedCornerShape(18.dp)
+            shape = RoundedCornerShape(Spacing.lg - Spacing.xs)
         ) {
             Icon(icon, contentDescription = label)
         }
@@ -1458,7 +1495,7 @@ private fun TargetRow(t: CompassTarget) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(Spacing.md))
             .background(MaterialTheme.colorScheme.surface)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
