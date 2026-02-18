@@ -116,6 +116,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
@@ -730,6 +732,9 @@ private fun CompassScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .semantics {
+                    contentDescription = "Радар команды. Жесты: pinch для зума, tap для отметки противника, long press в режиме редактирования."
+                }
                 .onSizeChanged { radarSize = it }
                 .pointerInput(state.enemyMarkEnabled, rangeMeters, state.me, state.myHeadingDeg) {
                     // Pinch to zoom
@@ -947,7 +952,7 @@ private fun CompassScreen(
                                 menuExpanded = false
                                 showHelpDialog = true
                             },
-                            leadingIcon = { Icon(Icons.Default.HelpOutline, contentDescription = null) }
+                            leadingIcon = { Icon(Icons.Default.HelpOutline, contentDescription = "Как пользоваться") }
                         )
                         DropdownMenuItem(
                             text = { Text(if (editMode) "Редактирование: ВКЛ" else "Редактирование: ВЫКЛ") },
@@ -1004,7 +1009,7 @@ private fun CompassScreen(
                                 menuExpanded = false
                                 onOpenSettings()
                             },
-                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = "Настройки") }
                         )
                         DropdownMenuItem(
                             text = { Text("Копировать код") },
@@ -1012,7 +1017,7 @@ private fun CompassScreen(
                                 menuExpanded = false
                                 onCopyCode()
                             },
-                            leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) }
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = "Копировать код") }
                         )
                         DropdownMenuItem(
                             text = { Text("Покинуть команду") },
@@ -1020,7 +1025,7 @@ private fun CompassScreen(
                                 menuExpanded = false
                                 onLeave()
                             },
-                            leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = null) }
+                            leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = "Покинуть команду") }
                         )
                     }
                 }
@@ -1074,7 +1079,7 @@ private fun CompassScreen(
                         Text("Список", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))
                         IconButton(onClick = { showList = false }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close")
+                            Icon(Icons.Default.Close, contentDescription = "Закрыть список")
                         }
                     }
                     Spacer(Modifier.height(Spacing.xs))
@@ -1568,7 +1573,7 @@ private fun TargetRow(t: CompassTarget) {
         }
 
         if (t.lowAccuracy) {
-            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+            Icon(Icons.Default.Warning, contentDescription = "Предупреждение", tint = MaterialTheme.colorScheme.tertiary)
         }
     }
 }
