@@ -636,7 +636,7 @@ private fun CompassScreen(
                 .onSizeChanged { radarSize = it }
                 .pointerInput(state.enemyMarkEnabled, rangeMeters, state.me, state.myHeadingDeg) {
                     // Pinch to zoom
-                    androidx.compose.foundation.gestures.detectTransformGestures { _, _, zoom, _ ->
+                    detectTransformGestures { _, _, zoom, _ ->
                         if (zoom != 1f) {
                             rangeMeters = (rangeMeters / zoom).coerceIn(10f, 1000f)
                         }
@@ -667,7 +667,7 @@ private fun CompassScreen(
                     }
 
                     // Tap: enemy ping (if enabled) OR add point (if edit mode)
-                    androidx.compose.foundation.gestures.detectTapGestures(
+                    detectTapGestures(
                         onTap = { offset ->
                             val ll = screenToLatLon(offset) ?: return@detectTapGestures
                             if (editMode) {
