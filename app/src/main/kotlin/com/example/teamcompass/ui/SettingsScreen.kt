@@ -84,19 +84,15 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-
-
-					Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-						val w = Modifier.weight(1f)
-						val game = state.defaultMode == TrackingMode.GAME
-						if (game) {
-							Button(onClick = { onDefaultMode(TrackingMode.GAME) }, modifier = w) { Text("Игра") }
-							OutlinedButton(onClick = { onDefaultMode(TrackingMode.SILENT) }, modifier = w) { Text("Тихо") }
-						} else {
-							OutlinedButton(onClick = { onDefaultMode(TrackingMode.GAME) }, modifier = w) { Text("Игра") }
-							Button(onClick = { onDefaultMode(TrackingMode.SILENT) }, modifier = w) { Text("Тихо") }
-						}
-					}
+                    val gameSelected = state.defaultMode == TrackingMode.GAME
+                    BinaryChoiceButtons(
+                        modifier = Modifier.fillMaxWidth(),
+                        leftText = "Игра",
+                        rightText = "Тихо",
+                        leftSelected = gameSelected,
+                        onLeftClick = { if (!gameSelected) onDefaultMode(TrackingMode.GAME) },
+                        onRightClick = { if (gameSelected) onDefaultMode(TrackingMode.SILENT) },
+                    )
                 }
             }
 
@@ -152,6 +148,28 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+
+@Composable
+private fun BinaryChoiceButtons(
+    modifier: Modifier = Modifier,
+    leftText: String,
+    rightText: String,
+    leftSelected: Boolean,
+    onLeftClick: () -> Unit,
+    onRightClick: () -> Unit,
+) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        val w = Modifier.weight(1f)
+        if (leftSelected) {
+            Button(onClick = onLeftClick, modifier = w) { Text(leftText) }
+            OutlinedButton(onClick = onRightClick, modifier = w) { Text(rightText) }
+        } else {
+            OutlinedButton(onClick = onLeftClick, modifier = w) { Text(leftText) }
+            Button(onClick = onRightClick, modifier = w) { Text(rightText) }
         }
     }
 }

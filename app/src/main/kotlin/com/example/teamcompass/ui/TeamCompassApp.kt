@@ -220,7 +220,7 @@ fun TeamCompassApp(vm: TeamCompassViewModel = viewModel()) {
                             onCopyCode = { copyToClipboard(ctx, state.teamCode ?: "") },
                             onOpenSettings = { nav.navigate(ROUTE_SETTINGS) },
                             onTogglePlayerMode = vm::togglePlayerMode,
-                            onSos = vm::triggerSos,
+                            onSos = vm::toggleSos,
                             onAddPointAt = vm::addPointAt,
                             onUpdatePoint = vm::updatePoint,
                             onDeletePoint = vm::deletePoint,
@@ -854,9 +854,10 @@ private fun CompassScreen(
                     onClick = onTogglePlayerMode
                 )
 
+                val sosActive = state.mySosUntilMs > now
                 RailButton(
                     icon = Icons.Default.Warning,
-                    label = "SOS",
+                    label = if (sosActive) "SOS: ON" else "SOS",
                     onClick = onSos
                 )
             }
@@ -1252,16 +1253,14 @@ private fun CompassScreen(
                         }
 
                         if (!isEdit) {
-							Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-								val w = Modifier.weight(1f)
-								if (forTeam) {
-									Button(onClick = { forTeam = true }, modifier = w) { Text("Для команды") }
-									OutlinedButton(onClick = { forTeam = false }, modifier = w) { Text("Для себя") }
-								} else {
-									OutlinedButton(onClick = { forTeam = true }, modifier = w) { Text("Для команды") }
-									Button(onClick = { forTeam = false }, modifier = w) { Text("Для себя") }
-								}
-							}
+                            BinaryChoiceButtons(
+                                modifier = Modifier.fillMaxWidth(),
+                                leftText = "Для команды",
+                                rightText = "Для себя",
+                                leftSelected = forTeam,
+                                onLeftClick = { forTeam = true },
+                                onRightClick = { forTeam = false },
+                            )
                         } else {
                             Text(
                                 if (pd.isTeam) "Командная точка" else "Личная точка",
@@ -1390,6 +1389,28 @@ private fun RadarPointMarker(marker: PointMarkerUi) {
         }
     }
 }
+
+@Composable
+private fun BinaryChoiceButtons(
+    modifier: Modifier = Modifier,
+    leftText: String,
+    rightText: String,
+    leftSelected: Boolean,
+    onLeftClick: () -> Unit,
+    onRightClick: () -> Unit,
+) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        val w = Modifier.weight(1f)
+        if (leftSelected) {
+            Button(onClick = onLeftClick, modifier = w) { Text(leftText) }
+            OutlinedButton(onClick = onRightClick, modifier = w) { Text(rightText) }
+        } else {
+            OutlinedButton(onClick = onLeftClick, modifier = w) { Text(leftText) }
+            Button(onClick = onRightClick, modifier = w) { Text(rightText) }
+        }
+    }
+}
+
 
 @Composable
 private fun RailButton(
