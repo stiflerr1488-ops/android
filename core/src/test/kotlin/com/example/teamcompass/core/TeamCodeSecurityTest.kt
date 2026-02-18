@@ -56,10 +56,24 @@ class TeamCodeSecurityTest {
     }
 
     @Test
+    fun `hash generation rejects too short but hex salt`() {
+        assertFailsWith<IllegalArgumentException> {
+            TeamCodeSecurity.hashJoinCode("123456", "a1b2c3d4")
+        }
+    }
+
+    @Test
     fun `hash verify fails with malformed salt`() {
         val validSalt = TeamCodeSecurity.generateSaltHex()
         val hash = TeamCodeSecurity.hashJoinCode("123456", validSalt)
         assertFalse(TeamCodeSecurity.verifyJoinCode("123456", "bad-salt", hash))
+    }
+
+    @Test
+    fun `hash verify fails with too short but hex salt`() {
+        val validSalt = TeamCodeSecurity.generateSaltHex()
+        val hash = TeamCodeSecurity.hashJoinCode("123456", validSalt)
+        assertFalse(TeamCodeSecurity.verifyJoinCode("123456", "a1b2c3d4", hash))
     }
 
     @Test

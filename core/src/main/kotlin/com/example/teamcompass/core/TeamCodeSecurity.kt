@@ -6,11 +6,6 @@ import java.util.Locale
 
 object TeamCodeSecurity {
     private val random = SecureRandom()
-    private const val SHA256_HEX_LENGTH = 64
-
-    private const val MIN_SALT_BYTES = 8
-    private const val SHA256_HEX_LENGTH = 64
-
     private const val MIN_SALT_BYTES = 8
     private const val SHA256_HEX_LENGTH = 64
 
@@ -21,12 +16,14 @@ object TeamCodeSecurity {
     }
 
     fun hashJoinCode(joinCode: String, saltHex: String): String {
-        require(saltHex.isHexString()) { "saltHex must be a valid hex string" }
+        require(saltHex.isValidSaltHex()) {
+            "saltHex must be a valid hex string with at least ${MIN_SALT_BYTES * 2} chars"
+        }
         return hashJoinCodeDigest(joinCode, saltHex).toHexString()
     }
 
     fun verifyJoinCode(joinCode: String, saltHex: String, expectedHashHex: String): Boolean {
-        if (!saltHex.isHexString()) return false
+        if (!saltHex.isValidSaltHex()) return false
         if (expectedHashHex.length != SHA256_HEX_LENGTH) return false
 
         val expectedDigest = expectedHashHex.hexToByteArrayOrNull() ?: return false
@@ -45,6 +42,9 @@ object TeamCodeSecurity {
 
     private fun String.isHexString(): Boolean =
         isNotEmpty() && length % 2 == 0 && all { it.isHexDigit() }
+
+    private fun String.isValidSaltHex(): Boolean =
+        isHexString() && length >= MIN_SALT_BYTES * 2
 
     private fun String.hexToByteArrayOrNull(): ByteArray? {
         if (!isHexString()) return null
