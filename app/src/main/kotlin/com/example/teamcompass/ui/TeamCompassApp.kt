@@ -1124,8 +1124,7 @@ private fun CompassScreen(
         }
 
         // Long-press actions on a point marker.
-        if (pointAction != null) {
-            val pa = pointAction!!
+        pointAction?.let { pa ->
             val m = pa.marker
             // Backward compatible: if createdBy is missing, treat it as editable.
             val isAuthor = (!m.isTeam) || (m.createdBy == null || m.createdBy == state.uid)
@@ -1195,8 +1194,7 @@ private fun CompassScreen(
         }
 
         // Create/edit point dialog.
-        if (pointDialog != null) {
-            val pd = pointDialog!!
+        pointDialog?.let { pd ->
             var label by remember(pd.id, pd.lat, pd.lon) { mutableStateOf(pd.initialLabel) }
             var iconRaw by remember(pd.id, pd.lat, pd.lon) { mutableStateOf(pd.initialIconRaw) }
             var forTeam by remember(pd.id, pd.lat, pd.lon) { mutableStateOf(pd.isTeam) }

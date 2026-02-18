@@ -836,7 +836,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
                             else -> continue
                         }
                         val cmd = QuickCommand(id, type, createdAt, createdBy)
-                        if (best == null || cmd.createdAtMs > best!!.createdAtMs) best = cmd
+                        if (best == null || cmd.createdAtMs > (best?.createdAtMs ?: Long.MIN_VALUE)) best = cmd
                     }
 
                     _ui.update { it.copy(activeCommand = best) }
