@@ -6,6 +6,7 @@ import java.util.Locale
 
 object TeamCodeSecurity {
     private val random = SecureRandom()
+    private const val SHA256_HEX_LENGTH = 64
 
     private const val MIN_SALT_BYTES = 8
     private const val SHA256_HEX_LENGTH = 64
