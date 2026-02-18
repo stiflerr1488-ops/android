@@ -369,133 +369,169 @@ private fun JoinScreen(
     savedCodeHint: String?
 ) {
     var code by remember { mutableStateOf(savedCodeHint ?: "") }
+    val normalizedCallsign = callsign.trim()
+    val callsignValid = normalizedCallsign.length in 3..16 && normalizedCallsign.all { it.isLetterOrDigit() || it == '_' || it == '-' }
+    val callsignError = normalizedCallsign.isNotEmpty() && !callsignValid
+    val codeError = code.isNotEmpty() && code.length != 6
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(20.dp),
-        verticalArrangement = Arrangement.Center
+            .padding(20.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_compass),
-                    contentDescription = null,
-                    modifier = Modifier.size(36.dp)
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text("TeamCompass", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("Командный радар для леса", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-
-        Spacer(Modifier.height(18.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        Column(
+            verticalArrangement = Arrangement.Center
         ) {
-            Column(Modifier.padding(16.dp)) {
-                Text("Вход в команду", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Быстрый горизонтальный вход: слева создать, справа войти по коду.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Spacer(Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = callsign,
-                    onValueChange = onCallsignChange,
-                    label = { Text("Позывной") },
-                    singleLine = true,
-                    enabled = !isBusy,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Card(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                    Image(
+                        painter = painterResource(R.drawable.ic_compass),
+                        contentDescription = null,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text("TeamCompass", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text("Командный радар для леса", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Вход в команду", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Шаг 1 из 2: укажите позывной. Затем создайте команду или войдите по коду.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = callsign,
+                        onValueChange = onCallsignChange,
+                        label = { Text("Позывной") },
+                        singleLine = true,
+                        enabled = !isBusy,
+                        isError = callsignError,
+                        supportingText = {
+                            if (callsignError) {
+                                Text("Допустимо 3–16 символов: буквы, цифры, _ или -")
+                            } else {
+                                Text("3–16 символов: буквы, цифры, _ или -")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Новая команда", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Создать новый код и поделиться им с группой.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Button(
-                                onClick = onCreate,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                enabled = !isBusy
-                            ) {
-                                if (isBusy) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Создаю…")
-                                } else {
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("Новая команда", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Создать новый код и поделиться им с группой.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Button(
+                                    onClick = onCreate,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    enabled = !isBusy && callsignValid
+                                ) {
                                     Icon(Icons.Default.Groups, contentDescription = null)
                                     Spacer(Modifier.width(8.dp))
                                     Text("Создать")
                                 }
                             }
                         }
-                    }
 
-                    Card(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                    ) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Вход по коду", fontWeight = FontWeight.SemiBold)
-                            OutlinedTextField(
-                                value = code,
-                                onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                                label = { Text("Код (6 цифр)") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                enabled = !isBusy,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            FilledTonalButton(
-                                onClick = { onJoin(code) },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                enabled = !isBusy && code.length == 6
-                            ) {
-                                Icon(Icons.Default.GpsFixed, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Войти")
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("Вход по коду", fontWeight = FontWeight.SemiBold)
+                                OutlinedTextField(
+                                    value = code,
+                                    onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                                    label = { Text("Код (6 цифр)") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    enabled = !isBusy,
+                                    isError = codeError,
+                                    supportingText = {
+                                        if (codeError) {
+                                            Text("Код должен содержать 6 цифр")
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                FilledTonalButton(
+                                    onClick = { onJoin(code) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    enabled = !isBusy && callsignValid && code.length == 6
+                                ) {
+                                    Icon(Icons.Default.GpsFixed, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Войти")
+                                }
                             }
                         }
                     }
-                }
 
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Позывной сохраняется на устройстве. Код можно просто скинуть в чат.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Позывной сохраняется на устройстве. Код можно отправить в чат.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = isBusy,
+            modifier = Modifier.align(Alignment.Center),
+            enter = fadeIn(tween(120)),
+            exit = fadeOut(tween(120))
+        ) {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text("Подключаем к команде…", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }
