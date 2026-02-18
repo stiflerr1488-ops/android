@@ -5,6 +5,8 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.Shapes
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 // Military palette: olive + sand
 private val DarkColors = darkColorScheme(
@@ -43,6 +45,13 @@ private val LightColors = lightColorScheme(
     onSurfaceVariant = Color(0xFF3A3A2A),
 )
 
+
+private val AppShapes = Shapes(
+    small = RoundedCornerShape(Radius.sm),
+    medium = RoundedCornerShape(Radius.md),
+    large = RoundedCornerShape(Radius.lg),
+)
+
 @Composable
 fun TeamCompassTheme(
     darkTheme: Boolean = true,
@@ -52,6 +61,7 @@ fun TeamCompassTheme(
     MaterialTheme(
         colorScheme = colors,
         typography = Typography,
+        shapes = AppShapes,
         content = content
     )
 }

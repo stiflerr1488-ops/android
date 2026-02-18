@@ -1,6 +1,8 @@
 package com.example.teamcompass.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -68,7 +70,8 @@ fun SettingsScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(Spacing.md),
+                .padding(Spacing.md)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
             Card(
