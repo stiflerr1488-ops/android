@@ -368,9 +368,30 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
         _ui.update { it.copy(mapOpacity = opacity.coerceIn(0f, 1f)) }
     }
 
+    fun toggleSos() {
+        val now = System.currentTimeMillis()
+        if (_ui.value.mySosUntilMs > now) {
+            clearSos()
+        } else {
+            triggerSos()
+        }
+    }
+
     fun triggerSos() {
         val until = System.currentTimeMillis() + 60_000L
         _ui.update { it.copy(mySosUntilMs = until) }
+        lastSentMs = 0L
+        val s = _ui.value
+        val code = s.teamCode
+        val uid = s.uid
+        val me = s.me
+        if (code != null && uid != null && me != null) {
+            sendStateNow(code, uid, s.callsign.ifBlank { "Игрок" }, me)
+        }
+    }
+
+    fun clearSos() {
+        _ui.update { it.copy(mySosUntilMs = 0L) }
         lastSentMs = 0L
         val s = _ui.value
         val code = s.teamCode
