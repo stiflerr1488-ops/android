@@ -5,6 +5,7 @@ import java.security.SecureRandom
 
 object TeamCodeSecurity {
     private val random = SecureRandom()
+    private const val SHA256_HEX_LENGTH = 64
 
     fun generateSaltHex(bytes: Int = 16): String {
         val data = ByteArray(bytes.coerceAtLeast(8))
@@ -20,6 +21,22 @@ object TeamCodeSecurity {
     }
 
     fun verifyJoinCode(joinCode: String, saltHex: String, expectedHashHex: String): Boolean {
-        return hashJoinCode(joinCode, saltHex).equals(expectedHashHex, ignoreCase = true)
+        val expectedDigest = expectedHashHex.hexToByteArrayOrNull() ?: return false
+        if (expectedHashHex.length != SHA256_HEX_LENGTH) return false
+
+        val actualDigest = MessageDigest
+            .getInstance("SHA-256")
+            .digest("${joinCode.trim()}:$saltHex".toByteArray(Charsets.UTF_8))
+
+        return MessageDigest.isEqual(actualDigest, expectedDigest)
+    }
+
+    private fun String.hexToByteArrayOrNull(): ByteArray? {
+        if (length % 2 != 0) return null
+        return try {
+            chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        } catch (_: NumberFormatException) {
+            null
+        }
     }
 }
