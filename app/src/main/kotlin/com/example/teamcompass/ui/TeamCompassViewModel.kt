@@ -34,6 +34,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
@@ -147,9 +148,16 @@ data class UiState(
 
 class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
 
+    private val explicitRtdbUrl = BuildConfig.RTDB_URL.trim().takeIf { it.isNotBlank() }
+    private val googleServicesRtdbUrl = runCatching {
+        FirebaseApp.getInstance().options.databaseUrl?.trim().orEmpty()
+    }.getOrNull()?.takeIf { it.isNotBlank() }
+
     private val auth = FirebaseAuth.getInstance()
-    private val db = if (BuildConfig.RTDB_URL.isNotBlank()) {
-        FirebaseDatabase.getInstance(BuildConfig.RTDB_URL).reference
+    private val db = if (explicitRtdbUrl != null) {
+        FirebaseDatabase.getInstance(explicitRtdbUrl).reference
+    } else if (googleServicesRtdbUrl != null) {
+        FirebaseDatabase.getInstance(googleServicesRtdbUrl).reference
     } else {
         FirebaseDatabase.getInstance().reference
     }
@@ -220,6 +228,12 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
     private fun noteWriteError(message: String, cause: Throwable? = null) {
         emitError(message, cause)
         _ui.update { it.copy(telemetry = it.telemetry.copy(rtdbWriteErrors = it.telemetry.rtdbWriteErrors + 1)) }
+    }
+
+    private fun ensureRtdbConfiguredOrShowError(): Boolean {
+        if (explicitRtdbUrl != null || googleServicesRtdbUrl != null) return true
+        emitError("Не настроена Realtime Database URL. Добавь TEAMCOMPASS_RTDB_URL в gradle.properties или укажи firebase_url в google-services.json.")
+        return false
     }
 
     init {
@@ -511,6 +525,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun createTeam() {
+        if (!ensureRtdbConfiguredOrShowError()) return
         if (_ui.value.isBusy) return
         val uid = _ui.value.uid
         if (uid == null) {
@@ -575,6 +590,7 @@ class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun joinTeam(codeRaw: String, alsoCreateMember: Boolean = true) {
+        if (!ensureRtdbConfiguredOrShowError()) return
         if (_ui.value.isBusy) return
         val uid = _ui.value.uid
         if (uid == null) {
