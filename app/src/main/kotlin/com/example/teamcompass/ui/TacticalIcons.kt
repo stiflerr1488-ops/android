@@ -6,19 +6,16 @@ import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
- * "Нормальные" тактические иконки для точек/пингов.
- *
- * В Firebase в поле icon хранится [raw] (строка), чтобы было стабильно и совместимо.
+ * Tactical marker icon ids saved in Firebase/KMZ as [raw].
+ * Keep values stable for data compatibility.
  */
 enum class TacticalIconId(
     val raw: String,
@@ -27,19 +24,22 @@ enum class TacticalIconId(
 ) {
     FLAG("FLAG", "Флаг", Icons.Filled.Flag),
     OBJECTIVE("OBJECTIVE", "Цель", Icons.Filled.CenterFocusStrong),
-    ATTACK("ATTACK", "Атака", Icons.Filled.Navigation),
+    WAYPOINT("WAYPOINT", "Маршрут", Icons.Filled.Navigation),
     DEFEND("DEFEND", "Оборона", Icons.Filled.Shield),
     DANGER("DANGER", "Опасность", Icons.Filled.Warning),
     MEDIC("MEDIC", "Медик", Icons.Filled.HealthAndSafety),
     OBSERVE("OBSERVE", "Наблюдение", Icons.Filled.Visibility),
     BASE("BASE", "База", Icons.Filled.Home),
     TOOL("TOOL", "Тех", Icons.Filled.Build),
-    MARK("MARK", "Метка", Icons.Filled.LocationOn),
     RADIO("RADIO", "Связь", Icons.Filled.Radio),
-    STAR("STAR", "Звезда", Icons.Filled.Star),
 }
 
 fun tacticalIconOrNull(raw: String?): TacticalIconId? {
-    val r = raw ?: return null
-    return TacticalIconId.entries.firstOrNull { it.raw.equals(r, ignoreCase = true) }
+    val normalized = raw?.trim()?.uppercase() ?: return null
+    return when (normalized) {
+        // Legacy ids from older builds.
+        "ATTACK" -> TacticalIconId.WAYPOINT
+        "MARK", "STAR" -> TacticalIconId.OBJECTIVE
+        else -> TacticalIconId.entries.firstOrNull { it.raw == normalized }
+    }
 }

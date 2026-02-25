@@ -12,6 +12,7 @@ data class Member(
     val uid: String,
     val nick: String,
     val joinedAtMs: Long,
+    val role: Role = Role.FIGHTER,
 )
 
 data class MatchSnapshot(

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  icon_source.svg — master source for TeamCompass launcher icon
+  Canvas: 1024×1024 (represents the full adaptive icon square incl. bleed)
+  Safe area: content within ~[189..835] i.e. ~18% inset from each edge
+
+  Design v2 (2026-02-21) — enlarged geometry for adaptive-mask readability:
+    background  #1A1C16  multicam_background_base
+    ring outer  R=342 (centre 512,512)   — was R=313
+    ring inner  R=247                    — was R=228
+    north       half-width=123, tip Y=152 — was hw=95, tip Y=170
+    south       half-width=123, tip Y=872 — was hw=95, tip Y=854
+    pivot       arms ±76                  — was arms ±57
+
+  Colours:
+    ring / north  #E8E4D5  multicam_text (light sand)
+    south         #A89F81  multicam_tan
+    pivot         #5F6B4A  multicam_green
+-->
+<svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="1024"
+    height="1024"
+    viewBox="0 0 1024 1024">
+
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="#1A1C16" />
+
+  <!-- Compass ring (annulus, outer R=342, inner R=247) -->
+  <path
+      fill="#E8E4D5"
+      fill-rule="evenodd"
+      d="M512 170
+         A342,342 0 1,1 512,854
+         A342,342 0 1,1 512,170
+         M512 265
+         A247,247 0 1,0 512,759
+         A247,247 0 1,0 512,265" />
+
+  <!-- North needle (light, pointing up): tip Y=152, half-width=123 -->
+  <path fill="#E8E4D5"
+        d="M512,152 L635,512 L512,474 L389,512 Z" />
+
+  <!-- South needle (muted tan, pointing down): tip Y=872, half-width=123 -->
+  <path fill="#A89F81"
+        d="M512,872 L635,512 L512,550 L389,512 Z" />
+
+  <!-- Centre pivot diamond: arms ±76 -->
+  <path fill="#5F6B4A"
+        d="M512,436 L588,512 L512,588 L436,512 Z" />
+
+</svg>

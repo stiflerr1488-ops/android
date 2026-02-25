@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
 
     <!-- Main theme used after splash -->
     <!-- Compose Material3 does not ship XML themes; use Material Components as the base Activity theme. -->
     <style name="Theme.TeamCompass" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
     <!-- Android 12+ splash screen theme -->

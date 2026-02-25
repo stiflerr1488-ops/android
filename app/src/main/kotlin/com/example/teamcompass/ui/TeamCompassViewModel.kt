@@ -1,1248 +1,852 @@
 package com.example.teamcompass.ui
 
 import android.app.Application
-import android.annotation.SuppressLint
 import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.location.Location
+import android.hardware.display.DisplayManager
 import android.media.AudioManager
 import android.media.ToneGenerator
-import android.net.Uri
-import android.os.VibrationEffect
 import android.os.Vibrator
-import android.content.Intent
 import android.util.Log
-import android.view.Surface
-import android.view.WindowManager
-import androidx.core.content.ContextCompat
+import android.view.Window
+import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.example.teamcompass.BuildConfig
-import com.example.teamcompass.TrackingService
-import com.example.teamcompass.core.CompassCalculator
-import com.example.teamcompass.core.LocationPoint
+import com.example.teamcompass.R
+import com.example.teamcompass.auth.FirebaseIdentityLinkingService
+import com.example.teamcompass.auth.IdentityLinkingService
+import com.example.teamcompass.bluetooth.BluetoothScanner
 import com.example.teamcompass.core.PlayerMode
-import com.example.teamcompass.core.PlayerState
-import com.example.teamcompass.core.TeamCodeSecurity
+import com.example.teamcompass.core.TargetFilterPreset
 import com.example.teamcompass.core.TrackingMode
-import com.example.teamcompass.core.TrackingPolicy
-import com.example.teamcompass.core.GeoMath
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.firebase.FirebaseApp
+import com.example.teamcompass.domain.TeamActionFailure
+import com.example.teamcompass.domain.TeamActionResult
+import com.example.teamcompass.domain.TeamMemberPrefs
+import com.example.teamcompass.domain.TeamRepository
+import com.example.teamcompass.domain.TeamRolePatch
+import com.example.teamcompass.domain.TeamViewMode
+import com.example.teamcompass.domain.TrackingController
+import com.example.teamcompass.p2p.P2PTransportManager
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.DatabaseReference
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ServerValue
-import com.google.firebase.database.ValueEventListener
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlin.random.Random
+import javax.inject.Inject
 
-data class MapPoint(
-    val id: String,
-    val lat: Double,
-    val lon: Double,
-    val label: String,
-    val icon: String,
-    val createdAtMs: Long,
-    val createdBy: String? = null,
-    val isTeam: Boolean,
-)
+@Suppress("LongParameterList")
+@HiltViewModel
+class TeamCompassViewModel internal constructor(
+    private val app: Application,
+    private val teamRepository: TeamRepository,
+    private val trackingController: TrackingController,
+    private val prefs: UserPrefs,
+    private val auth: FirebaseAuth = FirebaseAuth.getInstance(),
+    private val autoStart: Boolean = false,
+    private val actionTraceIdProvider: ActionTraceIdProvider = UuidActionTraceIdProvider(),
+    private val structuredLogger: StructuredLogger = CrashlyticsStructuredLogger(),
+    private val coroutineExceptionHandler: CoroutineExceptionHandler = CoroutineExceptionHandler { _, t ->
+        Log.e(TAG, "Unhandled VM coroutine exception", t)
+    },
+    private val identityLinkingService: IdentityLinkingService = FirebaseIdentityLinkingService(auth),
+    private val p2pTransportManager: P2PTransportManager? = null,
+    private val initializeAutoStartOverride: (suspend TeamCompassViewModel.() -> Unit)? = null,
+    private val savedStateHandle: SavedStateHandle? = null,
+) : AndroidViewModel(app) {
 
-data class EnemyPing(
-    val id: String,
-    val lat: Double,
-    val lon: Double,
-    val createdAtMs: Long,
-    val createdBy: String? = null,
-)
+    @Inject
+    constructor(
+        app: Application,
+        teamRepository: TeamRepository,
+        trackingController: TrackingController,
+        prefs: UserPrefs,
+        auth: FirebaseAuth,
+        coroutineExceptionHandler: CoroutineExceptionHandler,
+        p2pTransportManager: P2PTransportManager,
+        savedStateHandle: SavedStateHandle,
+    ) : this(
+        app = app,
+        teamRepository = teamRepository,
+        trackingController = trackingController,
+        prefs = prefs,
+        auth = auth,
+        autoStart = true,
+        actionTraceIdProvider = UuidActionTraceIdProvider(),
+        structuredLogger = CrashlyticsStructuredLogger(),
+        coroutineExceptionHandler = coroutineExceptionHandler,
+        identityLinkingService = FirebaseIdentityLinkingService(auth),
+        p2pTransportManager = p2pTransportManager,
+        initializeAutoStartOverride = null,
+        savedStateHandle = savedStateHandle,
+    )
 
-enum class QuickCommandType { RALLY, RETREAT, ATTACK }
+    private val savedStateBinder = TeamCompassSavedStateBinder()
+    private val restored = savedStateBinder.restore(savedStateHandle)
 
-data class QuickCommand(
-    val id: String,
-    val type: QuickCommandType,
-    val createdAtMs: Long,
-    val createdBy: String? = null,
-)
+    private val sensorManager = app.getSystemService(SensorManager::class.java)
+    private val displayManager = app.getSystemService(DisplayManager::class.java)
+    private val vibrator = app.getSystemService(Vibrator::class.java)
+    private val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
+    private val rotationSensor: Sensor? = sensorManager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
 
-
-
-data class TelemetryState(
-    val rtdbReadErrors: Int = 0,
-    val rtdbWriteErrors: Int = 0,
-    val trackingRestarts: Int = 0,
-    val lastLocationAtMs: Long = 0L,
-    val lastTrackingRestartReason: String? = null,
-)
-
-sealed interface UiEvent {
-    data class Error(val message: String) : UiEvent
-}
-
-data class UiState(
-    val isAuthReady: Boolean = false,
-    val uid: String? = null,
-
-    val callsign: String = "",
-    val teamCode: String? = null,
-
-    val isTracking: Boolean = false,
-    val hasLocationPermission: Boolean = false,
-
-    val me: LocationPoint? = null,
-    val myHeadingDeg: Double? = null,
-
-    val players: List<PlayerState> = emptyList(),
-
-    // Gameplay status
-    val playerMode: PlayerMode = PlayerMode.GAME,
-    val isAnchored: Boolean = false,
-    val mySosUntilMs: Long = 0L,
-
-    // Shared overlays
-    val teamPoints: List<MapPoint> = emptyList(),
-    val privatePoints: List<MapPoint> = emptyList(),
-    val enemyPings: List<EnemyPing> = emptyList(),
-    val activeCommand: QuickCommand? = null,
-
-    val enemyMarkEnabled: Boolean = false,
-
-    // Tactical KMZ/KML map overlay
-    val activeMap: TacticalMap? = null,
-    val mapEnabled: Boolean = false,
-    /** 0..1 */
-    val mapOpacity: Float = 0.65f,
-
-    // Settings (persisted)
-    val defaultMode: TrackingMode = TrackingMode.GAME,
-    val gameIntervalSec: Int = 3,
-    val gameDistanceM: Int = 10,
-    val silentIntervalSec: Int = 10,
-    val silentDistanceM: Int = 30,
-
-    // UI helper
-    val isBusy: Boolean = false,
-    val showCompassHelpOnce: Boolean = true,
-
-    val lastError: String? = null,
-    val telemetry: TelemetryState = TelemetryState(),
-)
-
-class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val explicitRtdbUrl = BuildConfig.RTDB_URL.trim().takeIf { it.isNotBlank() }
-    private val googleServicesRtdbUrl = runCatching {
-        FirebaseApp.getInstance().options.databaseUrl?.trim().orEmpty()
-    }.getOrNull()?.takeIf { it.isNotBlank() }
-
-    private val auth = FirebaseAuth.getInstance()
-    private val db = if (explicitRtdbUrl != null) {
-        FirebaseDatabase.getInstance(explicitRtdbUrl).reference
-    } else if (googleServicesRtdbUrl != null) {
-        FirebaseDatabase.getInstance(googleServicesRtdbUrl).reference
-    } else {
-        FirebaseDatabase.getInstance().reference
-    }
-
-    private val prefs = UserPrefs(app)
-
-    // Used to break "infinite loading" if Firebase write task never completes (e.g. wrong RTDB URL / no network).
-    private var opNonce: Int = 0
-
-    private val _ui = MutableStateFlow(UiState())
+    private val _ui = MutableStateFlow(
+        UiState(
+            tracking = TrackingUiState(
+                defaultMode = restored.defaultMode,
+                isTracking = restored.isTracking,
+            ),
+            team = TeamUiState(
+                teamCode = restored.teamCode,
+                playerMode = restored.playerMode,
+                mySosUntilMs = restored.mySosUntilMs,
+            ),
+            filter = FilterUiState(targetFilterState = restored.targetFilterState),
+        )
+    )
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
     private val _events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 32)
     val events: SharedFlow<UiEvent> = _events.asSharedFlow()
 
-    private var statesListener: ValueEventListener? = null
-    private var statesRef: DatabaseReference? = null
+    private var bindingsStarted = false
+    private var targetFilterDirtyByUser = false
+    private val joinRateLimiter = JoinRateLimiter()
 
-    private var pointsListener: ValueEventListener? = null
-    private var pointsRef: DatabaseReference? = null
-
-    private var privatePointsListener: ValueEventListener? = null
-    private var privatePointsRef: DatabaseReference? = null
-
-    private var enemyListener: ValueEventListener? = null
-    private var enemyRef: DatabaseReference? = null
-
-    private var commandsListener: ValueEventListener? = null
-    private var commandsRef: DatabaseReference? = null
-
-    private var activeCommandExpiryJob: Job? = null
-    private var deadReminderJob: Job? = null
-    private var trackingWatchdogJob: Job? = null
-
-    private var lastSentMs: Long = 0L
-    private var lastMoveMs: Long = 0L
-    private var lastMoveLoc: Location? = null
-
-    // Enemy ping dedup for local vibration
-    private val processedEnemyPingIds = LinkedHashMap<String, Long>()
-
-    private val vibrator = app.getSystemService(Vibrator::class.java)
-    // "Strong" notification: use ALARM stream and full volume for a noticeable beep.
-    private val tone = ToneGenerator(AudioManager.STREAM_ALARM, 100)
-
-    private val fused = LocationServices.getFusedLocationProviderClient(app)
-    private var locationCallback: LocationCallback? = null
-
-    private val sensorManager = app.getSystemService(SensorManager::class.java)
-    private val windowManager = app.getSystemService(WindowManager::class.java)
-    private val rotationSensor: Sensor? = sensorManager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-    private var sensorListener: SensorEventListener? = null
-    private var _headingContinuous: Double? = null
-
-    private val calculator = CompassCalculator()
-
-    private fun emitError(message: String, cause: Throwable? = null) {
-        if (cause != null) Log.w(TAG, message, cause) else Log.w(TAG, message)
-        _ui.update { it.copy(lastError = message) }
-        _events.tryEmit(UiEvent.Error(message))
-    }
-
-    private fun noteReadError(message: String) {
-        emitError(message)
-        _ui.update { it.copy(telemetry = it.telemetry.copy(rtdbReadErrors = it.telemetry.rtdbReadErrors + 1)) }
-    }
-
-    private fun noteWriteError(message: String, cause: Throwable? = null) {
-        emitError(message, cause)
-        _ui.update { it.copy(telemetry = it.telemetry.copy(rtdbWriteErrors = it.telemetry.rtdbWriteErrors + 1)) }
-    }
-
-    private fun ensureRtdbConfiguredOrShowError(): Boolean {
-        if (explicitRtdbUrl != null || googleServicesRtdbUrl != null) return true
-        emitError("Не настроена Realtime Database URL. Добавь TEAMCOMPASS_RTDB_URL в gradle.properties или укажи firebase_url в google-services.json.")
-        return false
-    }
+    private val authDelegate = AuthDelegate(FirebaseAuthGateway(auth))
+    private val sessionCoordinator = SessionCoordinator(teamRepository, opTimeoutMs = 15_000L)
+    private val teamSessionDelegate = TeamSessionDelegate(sessionCoordinator, p2pTransportManager)
+    private val mapCoordinator = MapCoordinator()
+    private val alertsCoordinator = AlertsCoordinator()
+    private val targetFilterCoordinator = TargetFilterCoordinator(BuildConfig.TACTICAL_FILTERS_V1_ENABLED)
+    private val locationReadinessCoordinator = LocationReadinessCoordinator(app)
+    private val backendAvailabilityCoordinator = BackendAvailabilityCoordinator(
+        backendHealthDelegate = BackendHealthDelegate(
+            backendHealthMonitor = BackendHealthMonitor(teamRepository),
+            staleWarningMs = STALE_WARNING_MS,
+        ),
+        scope = viewModelScope,
+        readState = ::readState,
+        updateState = ::updateState,
+        emitError = ::emitError,
+    )
+    private val headingSensorCoordinator = HeadingSensorCoordinator(
+        sensorManager = sensorManager,
+        displayManager = displayManager,
+        rotationSensor = rotationSensor,
+        onHeadingChanged = { heading ->
+            updateState { it.copy(tracking = it.tracking.copy(myHeadingDeg = heading)) }
+            trackingController.updateHeading(heading)
+            refreshTargetsFromState()
+        },
+    )
+    private val autoBrightnessBinding = AutoBrightnessBinding(
+        app = app,
+        onInitError = { err -> Log.w(TAG, "AutoBrightness init failed", err) },
+    )
+    private val bluetoothScanCoordinator = BluetoothScanCoordinator(
+        application = app,
+        teamRepository = teamRepository,
+        scope = viewModelScope,
+        readState = ::readState,
+        updateState = ::updateState,
+        emitError = ::emitError,
+        bluetoothScanner = BluetoothScanner(app),
+    )
+    private val mapActionsCoordinator = MapActionsCoordinator(
+        application = app,
+        mapCoordinator = mapCoordinator,
+        scope = viewModelScope,
+        coroutineExceptionHandler = coroutineExceptionHandler,
+        readState = ::readState,
+        updateState = ::updateState,
+        emitError = ::emitError,
+    )
+    private val tacticalActionsCoordinator = TacticalActionsCoordinator(
+        teamRepository = teamRepository,
+        scope = viewModelScope,
+        readState = ::readState,
+        updateState = ::updateState,
+        emitError = ::emitError,
+        handleActionFailure = ::handleActionFailure,
+        newTraceId = ::newTraceId,
+        logActionStart = ::logActionStart,
+        logActionSuccess = ::logActionSuccess,
+        logActionFailure = ::logActionFailure,
+    )
+    private val trackingCoordinator = TrackingCoordinator(trackingController)
+    private val p2pInboundCoordinator = P2PInboundCoordinator(
+        scope = viewModelScope,
+        coroutineExceptionHandler = coroutineExceptionHandler,
+        observeInbound = teamSessionDelegate::observeP2PInbound,
+        updateState = ::updateState,
+        onStreamFailure = { err, teamCode, uid ->
+            logActionFailure("p2pInbound", newTraceId("p2pInbound"), err, err.message, teamCode, uid)
+        },
+    )
+    private val memberPrefsSyncCoordinator = MemberPrefsSyncCoordinator(
+        worker = MemberPrefsSyncWorker(
+            teamRepository = teamRepository,
+            tacticalFiltersEnabled = BuildConfig.TACTICAL_FILTERS_V1_ENABLED,
+        ),
+        scope = viewModelScope,
+        toMemberPrefs = targetFilterCoordinator::toMemberPrefs,
+        onRemotePrefs = ::onRemoteMemberPrefs,
+        onObserverFailure = { err -> Log.w(TAG, "memberPrefs observer failed; retrying", err) },
+        isUserDirty = { targetFilterDirtyByUser },
+        onSyncSuccess = { targetFilterDirtyByUser = false },
+        onSyncFailure = { failure, userInitiated ->
+            if (userInitiated) handleActionFailure(tr(R.string.vm_error_targets_filter_save_failed), failure)
+        },
+    )
+    private val teamCompassAlertEffectsCoordinator = TeamCompassAlertEffectsCoordinator(
+        scope = viewModelScope,
+        coroutineExceptionHandler = coroutineExceptionHandler,
+        application = app,
+        alertsCoordinator = alertsCoordinator,
+        eventNotificationManager = EventNotificationManager(app),
+        readState = ::readState,
+        vibrator = vibrator,
+        tone = tone,
+        logTag = TAG,
+    )
+    private val teamSnapshotSyncCoordinator = TeamSnapshotSyncCoordinator(
+        teamSnapshotObserver = TeamSnapshotObserver(
+            teamRepository = teamRepository,
+            initialRetryDelayMs = 1_000L,
+            maxRetryDelayMs = 10_000L,
+        ),
+        backendAvailabilityCoordinator = backendAvailabilityCoordinator,
+        readState = ::readState,
+        updateState = ::updateState,
+        emitError = ::emitError,
+        onSnapshotSideEffects = { enemyPings ->
+            refreshTargetsFromState()
+            teamCompassAlertEffectsCoordinator.processEnemyPingAlerts(enemyPings)
+            teamCompassAlertEffectsCoordinator.processSosAlerts()
+        },
+    )
+    private val identityLinkingCoordinator = IdentityLinkingCoordinator(
+        identityLinkingService = identityLinkingService,
+        nextTraceId = { newTraceId("identityLinking") },
+        onStart = { traceId, teamCode, uid -> logActionStart("identityLinkingEligibility", traceId, teamCode, uid) },
+        onSuccess = { traceId, teamCode, uid -> logActionSuccess("identityLinkingEligibility", traceId, teamCode, uid) },
+        onFailure = { traceId, teamCode, uid, err ->
+            logActionFailure("identityLinkingEligibility", traceId, err, err.message, teamCode, uid)
+        },
+        onEligiblePrompt = { uid, teamCode, reason ->
+            Log.i(TAG, "Identity linking eligible (uid=$uid, teamCode=$teamCode, reason=$reason)")
+        },
+    )
+    private val teamCompassDeviceUiCoordinator = TeamCompassDeviceUiCoordinator(
+        scope = viewModelScope,
+        application = app,
+        headingSensorCoordinator = headingSensorCoordinator,
+        locationReadinessCoordinator = locationReadinessCoordinator,
+        autoBrightnessBinding = autoBrightnessBinding,
+        bluetoothScanCoordinatorProvider = { bluetoothScanCoordinator },
+        readState = ::readState,
+        updateState = ::updateState,
+        emitError = ::emitError,
+        persistAutoBrightnessEnabled = { enabled -> launchPrefsWrite { setAutoBrightnessEnabled(enabled) } },
+        persistScreenBrightness = { brightness -> launchPrefsWrite { setScreenBrightness(brightness) } },
+        persistHasStartedOnce = { value -> launchPrefsWrite { setHasStartedOnce(value) } },
+        startTracking = { mode, persist -> startTracking(mode, persist) },
+        servicesDisabledError = { tr(R.string.vm_error_location_services_disabled) },
+        trackingDisabledError = { tr(R.string.vm_error_location_disabled_during_tracking) },
+        bluetoothUnavailableError = { tr(R.string.vm_error_bluetooth_unavailable) },
+        pollIntervalMs = { enabled -> locationServicePollIntervalMs(enabled) },
+        logTag = TAG,
+    )
+    private val teamCompassSessionListeningCoordinator = TeamCompassSessionListeningCoordinator(
+        scope = viewModelScope,
+        coroutineExceptionHandler = coroutineExceptionHandler,
+        application = app,
+        teamSessionDelegate = teamSessionDelegate,
+        readState = ::readState,
+        updateState = ::updateState,
+        normalizeTeamCode = sessionCoordinator::normalizeTeamCode,
+        emitError = ::emitError,
+        clearStoredTeamCode = { launchPrefsWrite { setTeamCode(null) } },
+        startBackendAvailability = backendAvailabilityCoordinator::start,
+        stopBackendAvailability = backendAvailabilityCoordinator::stop,
+        startP2PInbound = { teamCode, uid -> p2pInboundCoordinator.start(teamCode, uid) },
+        stopP2PInbound = p2pInboundCoordinator::stop,
+        startMemberPrefsSync = { teamCode, uid ->
+            memberPrefsSyncCoordinator.start(teamCode, uid, _ui.map { it.filter.targetFilterState })
+        },
+        stopMemberPrefsSync = memberPrefsSyncCoordinator::stop,
+        collectTeamSnapshot = { teamCode, uid, backendDownMessage ->
+            teamSnapshotSyncCoordinator.collect(teamCode, uid, backendDownMessage)
+        },
+        newTraceId = ::newTraceId,
+        logActionStart = ::logActionStart,
+        logActionSuccess = ::logActionSuccess,
+        logActionFailure = ::logActionFailure,
+        logTag = TAG,
+    )
 
     init {
+        savedStateBinder.bind(
+            scope = viewModelScope,
+            savedStateHandle = savedStateHandle,
+            uiStateFlow = _ui,
+            coroutineExceptionHandler = coroutineExceptionHandler,
+            logWarning = { m, e -> if (e != null) Log.w(TAG, m, e) else Log.w(TAG, m) },
+        )
+        if (autoStart) runAutoStartInitialization()
+    }
+
+    private fun runAutoStartInitialization() {
+        val traceId = newTraceId("initializeAutoStart")
+        logActionStart("initializeAutoStart", traceId, readState().teamCode, readState().uid)
         viewModelScope.launch {
-            val callsign = prefs.callsignFlow.first()
-            val team = prefs.teamCodeFlow.first()
-            val defMode = prefs.defaultModeFlow.first()
-            val gameInt = prefs.gameIntervalSecFlow.first()
-            val gameDist = prefs.gameDistanceMFlow.first()
-            val silentInt = prefs.silentIntervalSecFlow.first()
-            val silentDist = prefs.silentDistanceMFlow.first()
-            val showHelpOnce = prefs.showCompassHelpOnceFlow.first()
-
-            _ui.update {
-                it.copy(
-                    callsign = callsign,
-                    teamCode = team,
-                    defaultMode = defMode,
-                    gameIntervalSec = gameInt,
-                    gameDistanceM = gameDist,
-                    silentIntervalSec = silentInt,
-                    silentDistanceM = silentDist,
-                    showCompassHelpOnce = showHelpOnce,
-                )
+            try {
+                initializeAutoStartOverride?.invoke(this@TeamCompassViewModel) ?: initializeAutoStart()
+                logActionSuccess("initializeAutoStart", traceId, readState().teamCode, readState().uid)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (err: Throwable) {
+                logActionFailure("initializeAutoStart", traceId, err, err.message, readState().teamCode, readState().uid)
+                emitError("Initialization failed: ${err.message ?: err::class.java.simpleName}", err)
             }
-
-            // If we had a team saved, start listening right away after auth
-            // (auth may not be ready yet; ensureAuth will resume)
         }
+    }
+
+    private suspend fun initializeAutoStart() {
+        startRuntimeBindingsIfNeeded()
+        refreshLocationReadiness()
+        teamCompassDeviceUiCoordinator.startHeading()
+        teamCompassDeviceUiCoordinator.startLocationServiceMonitor()
         ensureAuth()
     }
 
+    private fun startRuntimeBindingsIfNeeded() {
+        if (bindingsStarted) return
+        bindingsStarted = true
+        launchPrefsBindings(
+            scope = viewModelScope,
+            coroutineExceptionHandler = coroutineExceptionHandler,
+            prefs = prefs,
+            readState = ::readState,
+            updateState = ::updateState,
+            normalizeTeamCode = sessionCoordinator::normalizeTeamCode,
+            startListening = { code -> teamCompassSessionListeningCoordinator.startListening(code) },
+            stopListening = ::stopListening,
+            autoBrightnessBinding = autoBrightnessBinding,
+        )
+        launchTrackingControllerBindings(
+            scope = viewModelScope,
+            coroutineExceptionHandler = coroutineExceptionHandler,
+            trackingController = trackingController,
+            updateState = ::updateState,
+            refreshTargetsFromState = ::refreshTargetsFromState,
+        )
+    }
+
     fun ensureAuth() {
-        val current = auth.currentUser
-        if (current != null) {
-            _ui.update { it.copy(isAuthReady = true, uid = current.uid) }
-            // resume listening if team saved
-            _ui.value.teamCode?.let { startListening(it) }
-            return
-        }
-        auth.signInAnonymously()
-            .addOnSuccessListener { res ->
-                _ui.update { it.copy(isAuthReady = true, uid = res.user?.uid) }
-                _ui.value.teamCode?.let { startListening(it) }
-            }
-            .addOnFailureListener { e ->
-                _ui.update { it.copy(isAuthReady = false) }
-                emitError("Auth error: ${e.message}")
-            }
+        authDelegate.ensureAuth(
+            onReady = { uid ->
+                updateState { it.copy(auth = it.auth.copy(isReady = true, uid = uid)) }
+                readState().teamCode?.let { code -> teamCompassSessionListeningCoordinator.startListening(code) }
+            },
+            onFailure = { err ->
+                updateState { it.copy(auth = it.auth.copy(isReady = false)) }
+                emitError(tr(R.string.vm_error_auth_failed_format, err.message.orEmpty()), err)
+            },
+        )
     }
 
     fun setCallsign(value: String) {
-        val v = value.take(24)
-        _ui.update { it.copy(callsign = v) }
-        viewModelScope.launch { prefs.setCallsign(v) }
-    }
-
-    fun setDefaultMode(mode: TrackingMode) {
-        val wasTracking = _ui.value.isTracking
-        _ui.update { it.copy(defaultMode = mode) }
-        viewModelScope.launch { prefs.setDefaultMode(mode) }
-        if (wasTracking) {
-            // restart immediately with new profile
-            restartTracking()
-        }
-    }
-
-    fun setGamePolicy(intervalSec: Int, distanceM: Int) {
-        val i = intervalSec.coerceIn(1, 20)
-        val d = distanceM.coerceIn(1, 100)
-        _ui.update { it.copy(gameIntervalSec = i, gameDistanceM = d) }
-        viewModelScope.launch { prefs.setGamePolicy(i, d) }
-        // apply immediately if tracking in that mode
-        if (_ui.value.isTracking && _ui.value.defaultMode == TrackingMode.GAME) {
-            restartTracking()
-        }
-    }
-
-    fun setSilentPolicy(intervalSec: Int, distanceM: Int) {
-        val i = intervalSec.coerceIn(2, 60)
-        val d = distanceM.coerceIn(1, 200)
-        _ui.update { it.copy(silentIntervalSec = i, silentDistanceM = d) }
-        viewModelScope.launch { prefs.setSilentPolicy(i, d) }
-        if (_ui.value.isTracking && _ui.value.defaultMode == TrackingMode.SILENT) {
-            restartTracking()
-        }
-    }
-
-    fun setLocationPermission(granted: Boolean) {
-        _ui.update { it.copy(hasLocationPermission = granted) }
-        if (!granted) stopTracking()
-    }
-
-    fun togglePlayerMode() {
-        val next = if (_ui.value.playerMode == PlayerMode.GAME) PlayerMode.DEAD else PlayerMode.GAME
-        setPlayerMode(next)
-    }
-
-    fun setPlayerMode(mode: PlayerMode) {
-        _ui.update { it.copy(playerMode = mode, isAnchored = false) }
-        lastSentMs = 0L // force a fresh send on next location
-        if (mode == PlayerMode.DEAD) startDeadReminder() else stopDeadReminder()
-        // Try to push the mode immediately using the last known point if available.
-        val s = _ui.value
-        val code = s.teamCode
-        val uid = s.uid
-        val me = s.me
-        if (code != null && uid != null && me != null) {
-            sendStateNow(code, uid, s.callsign.ifBlank { "Игрок" }, me)
-        }
-    }
-
-    fun setEnemyMarkEnabled(enabled: Boolean) {
-        _ui.update { it.copy(enemyMarkEnabled = enabled) }
-    }
-
-    fun importTacticalMap(uri: Uri) {
-        _ui.update { it.copy(isBusy = true) }
-        viewModelScope.launch {
-            try {
-                val map = KmzMapImporter.import(getApplication(), uri)
-                _ui.update {
-                    it.copy(
-                        activeMap = map,
-                        mapEnabled = true,
-                        isBusy = false,
-                    )
-                }
-            } catch (e: Exception) {
-                _ui.update {
-                    it.copy(
-                        isBusy = false,
-                        lastError = e.message ?: "Не удалось загрузить KMZ",
-                    )
-                }
-            }
-        }
-    }
-
-    fun clearTacticalMap() {
-        _ui.update { it.copy(activeMap = null, mapEnabled = false) }
-    }
-
-    fun setMapEnabled(enabled: Boolean) {
-        _ui.update { it.copy(mapEnabled = enabled) }
-    }
-
-    fun setMapOpacity(opacity: Float) {
-        _ui.update { it.copy(mapOpacity = opacity.coerceIn(0f, 1f)) }
-    }
-
-    fun toggleSos() {
-        val now = System.currentTimeMillis()
-        if (_ui.value.mySosUntilMs > now) {
-            clearSos()
-        } else {
-            triggerSos()
-        }
-    }
-
-    fun triggerSos() {
-        val until = System.currentTimeMillis() + 60_000L
-        _ui.update { it.copy(mySosUntilMs = until) }
-        lastSentMs = 0L
-        val s = _ui.value
-        val code = s.teamCode
-        val uid = s.uid
-        val me = s.me
-        if (code != null && uid != null && me != null) {
-            sendStateNow(code, uid, s.callsign.ifBlank { "Игрок" }, me)
-        }
-    }
-
-    fun clearSos() {
-        _ui.update { it.copy(mySosUntilMs = 0L) }
-        lastSentMs = 0L
-        val s = _ui.value
-        val code = s.teamCode
-        val uid = s.uid
-        val me = s.me
-        if (code != null && uid != null && me != null) {
-            sendStateNow(code, uid, s.callsign.ifBlank { "Игрок" }, me)
-        }
-    }
-
-    fun addPointHere(label: String, icon: String, forTeam: Boolean) {
-        val s = _ui.value
-        val code = s.teamCode ?: return
-        val uid = s.uid ?: return
-        val me = s.me ?: return
-        addPointAt(me.lat, me.lon, label, icon, forTeam)
-    }
-
-    fun addPointAt(lat: Double, lon: Double, label: String, icon: String, forTeam: Boolean) {
-        val s = _ui.value
-        val code = s.teamCode ?: return
-        val uid = s.uid ?: return
-        val ref = if (forTeam) {
-            db.child("teams").child(code).child("points").push()
-        } else {
-            db.child("teams").child(code).child("privatePoints").child(uid).push()
-        }
-        val payload = mapOf(
-            "lat" to lat,
-            "lon" to lon,
-            "label" to label,
-            "icon" to icon,
-            "createdAtMs" to ServerValue.TIMESTAMP,
-            "createdBy" to uid,
-        )
-        ref.setValue(payload)
-    }
-
-    fun updatePoint(id: String, lat: Double, lon: Double, label: String, icon: String, isTeam: Boolean) {
-        val s = _ui.value
-        val code = s.teamCode ?: return
-        val uid = s.uid ?: return
-
-        // Permission model:
-        // - Team points: only the author (createdBy) can edit/delete the shared point.
-        // - Private points: everyone can edit their own local points.
-        if (isTeam) {
-            val mp = s.teamPoints.firstOrNull { it.id == id }
-            val author = mp?.createdBy
-            if (author != null && author != uid) {
-                _ui.update { it.copy(lastError = "Только автор может редактировать командную точку") }
-                return
-            }
-        }
-        val ref = if (isTeam) {
-            db.child("teams").child(code).child("points").child(id)
-        } else {
-            db.child("teams").child(code).child("privatePoints").child(uid).child(id)
-        }
-        val payload = mapOf(
-            "lat" to lat,
-            "lon" to lon,
-            "label" to label,
-            "icon" to icon,
-            // keep original createdAtMs/createdBy if present; don't overwrite.
-        )
-        ref.updateChildren(payload)
-    }
-
-    fun deletePoint(id: String, isTeam: Boolean) {
-        val s = _ui.value
-        val code = s.teamCode ?: return
-        val uid = s.uid ?: return
-
-        if (isTeam) {
-            val mp = s.teamPoints.firstOrNull { it.id == id }
-            val author = mp?.createdBy
-            if (author != null && author != uid) {
-                _ui.update { it.copy(lastError = "Только автор может удалить командную точку") }
-                return
-            }
-        }
-        val ref = if (isTeam) {
-            db.child("teams").child(code).child("points").child(id)
-        } else {
-            db.child("teams").child(code).child("privatePoints").child(uid).child(id)
-        }
-        ref.removeValue()
-    }
-
-    fun sendQuickCommand(type: QuickCommandType) {
-        val s = _ui.value
-        val code = s.teamCode ?: return
-        val uid = s.uid ?: return
-        val payload = mapOf(
-            "type" to type.name,
-            "createdAtMs" to ServerValue.TIMESTAMP,
-            "createdBy" to uid,
-        )
-        db.child("teams").child(code).child("commands").push().setValue(payload)
-    }
-
-    fun addEnemyPing(lat: Double, lon: Double) {
-        val s = _ui.value
-        val code = s.teamCode ?: return
-        val uid = s.uid ?: return
-        val payload = mapOf(
-            "lat" to lat,
-            "lon" to lon,
-            "createdAtMs" to ServerValue.TIMESTAMP,
-            "createdBy" to uid,
-        )
-        db.child("teams").child(code).child("enemyPings").push().setValue(payload)
+        val v = value.trim().take(24)
+        updateState { it.copy(team = it.team.copy(callsign = v)) }
+        launchPrefsWrite { setCallsign(v) }
     }
 
     fun createTeam() {
-        if (!ensureRtdbConfiguredOrShowError()) return
-        if (_ui.value.isBusy) return
-        val uid = _ui.value.uid
-        if (uid == null) {
-            emitError("Авторизация ещё не готова. Подожди секунду и попробуй снова.")
+        if (readState().isBusy) return
+        val uid = readState().uid
+        if (uid.isNullOrBlank()) {
+            emitError(tr(R.string.vm_error_auth_not_ready))
             ensureAuth()
             return
         }
-
-        val nick = _ui.value.callsign.ifBlank { "Игрок" }
-        val code = generateCode()
-        val base = db.child("teams").child(code)
-        val joinSalt = TeamCodeSecurity.generateSaltHex()
-        val joinHash = TeamCodeSecurity.hashJoinCode(code, joinSalt)
-        val now = System.currentTimeMillis()
-
-        val myNonce = ++opNonce
-        _ui.update { it.copy(isBusy = true) }
-
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(12_000)
-            val s = _ui.value
-            if (s.isBusy && opNonce == myNonce && s.teamCode == null) {
-                _ui.update { it.copy(isBusy = false) }
-                emitError("Firebase не ответил (таймаут). Проверь интернет/Rules/URL базы.")
-            }
-        }
-
-        val meta = mapOf(
-            "createdAtMs" to ServerValue.TIMESTAMP,
-            "createdBy" to uid,
-            "isLocked" to false,
-            "expiresAtMs" to (now + 12 * 60 * 60_000L),
-            "joinSalt" to joinSalt,
-            "joinHash" to joinHash,
-        )
-
-        base.child("meta").setValue(meta)
-            .addOnSuccessListener {
-                val member = mapOf(
-                    "callsign" to nick,
-                    "joinedAtMs" to ServerValue.TIMESTAMP,
-                )
-                base.child("members").child(uid).setValue(member)
-                    .addOnSuccessListener {
-                        if (opNonce == myNonce) {
-                            _ui.update { it.copy(teamCode = code, isBusy = false, lastError = null) }
-                        }
-                        viewModelScope.launch { prefs.setTeamCode(code) }
-                        startListening(code)
+        val callsign = readState().callsign.ifBlank { tr(R.string.default_callsign_player) }
+        val traceId = newTraceId("createTeam")
+        logActionStart("createTeam", traceId, null, uid)
+        updateState { it.copy(team = it.team.copy(isBusy = true)) }
+        viewModelScope.launch(coroutineExceptionHandler) {
+            when (val result = sessionCoordinator.createTeam(uid, callsign)) {
+                is TeamActionResult.Success -> {
+                    val code = sessionCoordinator.normalizeTeamCode(result.value) ?: result.value
+                    updateState { state ->
+                        state.copy(team = state.team.copy(teamCode = code, isBusy = false), lastError = null)
                     }
-                    .addOnFailureListener { e ->
-                        if (opNonce == myNonce) {
-                            _ui.update { it.copy(isBusy = false, lastError = "Не удалось добавить участника: ${e.message}") }
-                        }
-                    }
-            }
-            .addOnFailureListener { e ->
-                if (opNonce == myNonce) {
-                    _ui.update { it.copy(isBusy = false, lastError = "Не удалось создать: ${e.message}") }
+                    launchPrefsWrite { setTeamCode(code) }
+                    joinRateLimiter.reset()
+                    teamCompassSessionListeningCoordinator.startListeningWithoutMembershipEnsure(code)
+                    identityLinkingCoordinator.evaluate(code, uid)
+                    logActionSuccess("createTeam", traceId, code, uid)
+                }
+                is TeamActionResult.Failure -> {
+                    updateState { it.copy(team = it.team.copy(isBusy = false)) }
+                    handleActionFailure(tr(R.string.vm_error_create_team_failed), result.details)
+                    logActionFailure("createTeam", traceId, result.details.cause, result.details.message, null, uid)
                 }
             }
+        }
     }
 
     fun joinTeam(codeRaw: String, alsoCreateMember: Boolean = true) {
-        if (!ensureRtdbConfiguredOrShowError()) return
-        if (_ui.value.isBusy) return
-        val uid = _ui.value.uid
-        if (uid == null) {
-            emitError("Авторизация ещё не готова. Подожди секунду и попробуй снова.")
+        if (readState().isBusy) return
+        val uid = readState().uid
+        if (uid.isNullOrBlank()) {
+            emitError(tr(R.string.vm_error_auth_not_ready))
             ensureAuth()
             return
         }
-        val nick = _ui.value.callsign.ifBlank { "Игрок" }
-        val code = codeRaw.filter { it.isDigit() }.padStart(6, '0').takeLast(6)
-        val base = db.child("teams").child(code)
-
-        val myNonce = ++opNonce
-        _ui.update { it.copy(isBusy = true) }
-
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(12_000)
-            val s = _ui.value
-            if (s.isBusy && opNonce == myNonce && s.teamCode == null) {
-                _ui.update { it.copy(isBusy = false) }
-                emitError("Firebase не ответил (таймаут). Проверь интернет/Rules/URL базы.")
+        val code = sessionCoordinator.normalizeTeamCode(codeRaw)
+        if (code == null) {
+            emitError(tr(R.string.join_code_error))
+            return
+        }
+        if (!joinRateLimiter.canAttempt(code)) {
+            emitError(tr(R.string.vm_error_join_rate_limited))
+            return
+        }
+        val callsign = readState().callsign.ifBlank { tr(R.string.default_callsign_player) }
+        val traceId = newTraceId("joinTeam")
+        logActionStart("joinTeam", traceId, code, uid)
+        updateState { it.copy(team = it.team.copy(isBusy = true)) }
+        viewModelScope.launch(coroutineExceptionHandler) {
+            val joinResult = if (alsoCreateMember) sessionCoordinator.joinTeam(code, uid, callsign) else TeamActionResult.Success(Unit)
+            when (joinResult) {
+                is TeamActionResult.Success -> {
+                    updateState { state -> state.copy(team = state.team.copy(teamCode = code, isBusy = false), lastError = null) }
+                    launchPrefsWrite { setTeamCode(code) }
+                    teamCompassSessionListeningCoordinator.startListeningWithoutMembershipEnsure(code)
+                    identityLinkingCoordinator.evaluate(code, uid)
+                    logActionSuccess("joinTeam", traceId, code, uid)
+                }
+                is TeamActionResult.Failure -> {
+                    updateState { it.copy(team = it.team.copy(isBusy = false)) }
+                    handleActionFailure(tr(R.string.vm_error_join_team_failed), joinResult.details)
+                    logActionFailure("joinTeam", traceId, joinResult.details.cause, joinResult.details.message, code, uid)
+                }
             }
         }
-
-        base.child("meta").get()
-            .addOnSuccessListener { snap ->
-                if (!snap.exists()) {
-                    if (opNonce == myNonce) {
-                        _ui.update { it.copy(isBusy = false, lastError = "Код не найден") }
-                    }
-                    return@addOnSuccessListener
-                }
-
-                val isLocked = snap.child("isLocked").getValue(Boolean::class.java) ?: false
-                if (isLocked) {
-                    if (opNonce == myNonce) {
-                        _ui.update { it.copy(isBusy = false, lastError = "Матч закрыт для новых входов") }
-                    }
-                    return@addOnSuccessListener
-                }
-
-                val expiresAt = snap.child("expiresAtMs").getValue(Long::class.java) ?: Long.MAX_VALUE
-                if (System.currentTimeMillis() > expiresAt) {
-                    if (opNonce == myNonce) {
-                        _ui.update { it.copy(isBusy = false, lastError = "Матч истёк") }
-                    }
-                    return@addOnSuccessListener
-                }
-
-                val joinSalt = snap.child("joinSalt").getValue(String::class.java)
-                val joinHash = snap.child("joinHash").getValue(String::class.java)
-                if (!joinSalt.isNullOrBlank() && !joinHash.isNullOrBlank()) {
-                    if (!TeamCodeSecurity.verifyJoinCode(code, joinSalt, joinHash)) {
-                        if (opNonce == myNonce) {
-                            _ui.update { it.copy(isBusy = false, lastError = "Код не прошёл проверку") }
-                        }
-                        return@addOnSuccessListener
-                    }
-                }
-
-                val proceed: () -> Unit = {
-                    if (opNonce == myNonce) {
-                        _ui.update { it.copy(teamCode = code, isBusy = false, lastError = null) }
-                    }
-                    viewModelScope.launch { prefs.setTeamCode(code) }
-                    startListening(code)
-                }
-
-                if (!alsoCreateMember) {
-                    proceed()
-                    return@addOnSuccessListener
-                }
-
-                val member = mapOf(
-                    "callsign" to nick,
-                    "joinedAtMs" to ServerValue.TIMESTAMP,
-                )
-                base.child("members").child(uid).setValue(member)
-                    .addOnSuccessListener { proceed() }
-                    .addOnFailureListener { e ->
-                        if (opNonce == myNonce) {
-                            _ui.update { it.copy(isBusy = false, lastError = "Не удалось войти: ${e.message}") }
-                        }
-                    }
-            }
-            .addOnFailureListener { e ->
-                if (opNonce == myNonce) {
-                    _ui.update { it.copy(isBusy = false, lastError = "Ошибка сети: ${e.message}") }
-                }
-            }
-    }
-
-
-    fun markCompassHelpSeen() {
-        _ui.update { it.copy(showCompassHelpOnce = false) }
-        viewModelScope.launch { prefs.setShowCompassHelpOnce(false) }
     }
 
     fun leaveTeam() {
         stopTracking()
         stopListening()
-        _ui.update { it.copy(teamCode = null, players = emptyList()) }
-        viewModelScope.launch { prefs.setTeamCode(null) }
+        teamCompassSessionListeningCoordinator.clearTeamSessionState(clearEnemyMarkEnabled = true)
+        updateState { it.copy(team = it.team.copy(teamCode = null)) }
+        launchPrefsWrite { setTeamCode(null) }
+        joinRateLimiter.reset()
+    }
+    fun setDefaultMode(mode: TrackingMode) {
+        updateState { it.copy(tracking = it.tracking.copy(defaultMode = mode)) }
+        launchPrefsWrite { setDefaultMode(mode) }
     }
 
-    private fun startListening(code: String) {
-        if (!_ui.value.isAuthReady) return
-        stopListening()
-        val uid = _ui.value.uid ?: return
-
-        val ref = db.child("teams").child(code).child("state")
-        statesRef = ref
-
-        val listener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val list = mutableListOf<PlayerState>()
-                for (child in snapshot.children) {
-                    val id = child.key ?: continue
-                    if (id == uid) continue
-                    val callsign = child.child("callsign").getValue(String::class.java) ?: "?"
-                    val lat = child.child("lat").getValue(Double::class.java) ?: continue
-                    val lon = child.child("lon").getValue(Double::class.java) ?: continue
-                    val acc = child.child("acc").getValue(Double::class.java) ?: 999.0
-                    val speed = child.child("speed").getValue(Double::class.java) ?: 0.0
-                    val heading = child.child("heading").getValue(Double::class.java)
-                    val ts = child.child("ts").getValue(Long::class.java) ?: 0L
-                    val modeStr = child.child("mode").getValue(String::class.java) ?: "GAME"
-                    val mode = if (modeStr.equals("DEAD", ignoreCase = true)) PlayerMode.DEAD else PlayerMode.GAME
-                    val anchored = child.child("anchored").getValue(Boolean::class.java) ?: false
-                    val sosUntil = child.child("sosUntilMs").getValue(Long::class.java) ?: 0L
-                    list.add(
-                        PlayerState(
-                            uid = id,
-                            nick = callsign,
-                            point = LocationPoint(lat, lon, acc, speed, heading, ts),
-                            mode = mode,
-                            anchored = anchored,
-                            sosUntilMs = sosUntil,
-                        )
-                    )
-                }
-                _ui.update { it.copy(players = list, lastError = null) }
-            }
-
-            override fun onCancelled(error: DatabaseError) {
-                noteReadError("DB: ${error.message}")
-            }
-        }
-
-        ref.addValueEventListener(listener)
-        statesListener = listener
-
-        // Team points
-        run {
-            val pRef = db.child("teams").child(code).child("points")
-            pointsRef = pRef
-            val l = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val pts = snapshot.children.mapNotNull { c ->
-                        val id = c.key ?: return@mapNotNull null
-                        val lat = c.child("lat").getValue(Double::class.java) ?: return@mapNotNull null
-                        val lon = c.child("lon").getValue(Double::class.java) ?: return@mapNotNull null
-                        val label = c.child("label").getValue(String::class.java) ?: ""
-                        val icon = c.child("icon").getValue(String::class.java) ?: TacticalIconId.FLAG.raw
-                        val createdAt = c.child("createdAtMs").getValue(Long::class.java) ?: 0L
-                        val createdBy = c.child("createdBy").getValue(String::class.java)
-                        MapPoint(id, lat, lon, label, icon, createdAt, createdBy, isTeam = true)
-                    }
-                    _ui.update { it.copy(teamPoints = pts) }
-                }
-
-                override fun onCancelled(error: DatabaseError) {
-                    noteReadError("DB(points): ${error.message}")
-                }
-            }
-            pointsListener = l
-            pRef.addValueEventListener(l)
-        }
-
-        // Private points
-        run {
-            val pRef = db.child("teams").child(code).child("privatePoints").child(uid)
-            privatePointsRef = pRef
-            val l = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val pts = snapshot.children.mapNotNull { c ->
-                        val id = c.key ?: return@mapNotNull null
-                        val lat = c.child("lat").getValue(Double::class.java) ?: return@mapNotNull null
-                        val lon = c.child("lon").getValue(Double::class.java) ?: return@mapNotNull null
-                        val label = c.child("label").getValue(String::class.java) ?: ""
-                        val icon = c.child("icon").getValue(String::class.java) ?: TacticalIconId.STAR.raw
-                        val createdAt = c.child("createdAtMs").getValue(Long::class.java) ?: 0L
-                        val createdBy = c.child("createdBy").getValue(String::class.java)
-                        MapPoint(id, lat, lon, label, icon, createdAt, createdBy, isTeam = false)
-                    }
-                    _ui.update { it.copy(privatePoints = pts) }
-                }
-
-                override fun onCancelled(error: DatabaseError) {
-                    noteReadError("DB(private): ${error.message}")
-                }
-            }
-            privatePointsListener = l
-            pRef.addValueEventListener(l)
-        }
-
-        // Enemy pings
-        run {
-            val eRef = db.child("teams").child(code).child("enemyPings")
-            enemyRef = eRef
-            val l = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val pings = snapshot.children.mapNotNull { c ->
-                        val id = c.key ?: return@mapNotNull null
-                        val lat = c.child("lat").getValue(Double::class.java) ?: return@mapNotNull null
-                        val lon = c.child("lon").getValue(Double::class.java) ?: return@mapNotNull null
-                        val createdAt = c.child("createdAtMs").getValue(Long::class.java) ?: 0L
-                        val createdBy = c.child("createdBy").getValue(String::class.java)
-                        EnemyPing(id, lat, lon, createdAt, createdBy)
-                    }
-                    _ui.update { it.copy(enemyPings = pings) }
-
-                    // Local vibration if I'm within 30m of a NEW ping.
-                    val me = _ui.value.me
-                    if (me != null) {
-                        val now = System.currentTimeMillis()
-                        // prune old processed ids
-                        val it = processedEnemyPingIds.entries.iterator()
-                        while (it.hasNext()) {
-                            val en = it.next()
-                            if (now - en.value > 2 * 60_000L) it.remove()
-                        }
-                        for (p in pings) {
-                            if (now - p.createdAtMs > 60_000L) continue
-                            if (processedEnemyPingIds.containsKey(p.id)) continue
-                            val dist = GeoMath.distanceMeters(me, LocationPoint(p.lat, p.lon, 0.0, 0.0, null, p.createdAtMs))
-                            if (dist <= 30.0) {
-                                vibrateAndBeep(strong = true)
-                            }
-                            processedEnemyPingIds[p.id] = now
-                        }
-                    }
-                }
-
-                override fun onCancelled(error: DatabaseError) {
-                    noteReadError("DB(enemy): ${error.message}")
-                }
-            }
-            enemyListener = l
-            eRef.addValueEventListener(l)
-        }
-
-        // Commands
-        run {
-            val cRef = db.child("teams").child(code).child("commands")
-            commandsRef = cRef
-            val l = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    var best: QuickCommand? = null
-                    for (c in snapshot.children) {
-                        val id = c.key ?: continue
-                        val typeStr = c.child("type").getValue(String::class.java) ?: continue
-                        val createdAt = c.child("createdAtMs").getValue(Long::class.java) ?: 0L
-                        val createdBy = c.child("createdBy").getValue(String::class.java)
-                        val type = when (typeStr.uppercase()) {
-                            "RALLY" -> QuickCommandType.RALLY
-                            "RETREAT" -> QuickCommandType.RETREAT
-                            "ATTACK" -> QuickCommandType.ATTACK
-                            else -> continue
-                        }
-                        val cmd = QuickCommand(id, type, createdAt, createdBy)
-                        if (best == null || cmd.createdAtMs > (best?.createdAtMs ?: Long.MIN_VALUE)) best = cmd
-                    }
-
-                    _ui.update { it.copy(activeCommand = best) }
-                    best?.let { scheduleCommandExpiry(it) }
-                }
-
-                override fun onCancelled(error: DatabaseError) {
-                    noteReadError("DB(commands): ${error.message}")
-                }
-            }
-            commandsListener = l
-            cRef.addValueEventListener(l)
-        }
-
-        // If we already have permission, we can start tracking automatically
-        if (_ui.value.hasLocationPermission) startTracking(_ui.value.defaultMode, persistMode = false)
+    fun setGamePolicy(intervalSec: Int, distanceM: Int) {
+        val i = intervalSec.coerceIn(1, 60)
+        val d = distanceM.coerceIn(1, 500)
+        updateState { it.copy(settings = it.settings.copy(gameIntervalSec = i, gameDistanceM = d)) }
+        launchPrefsWrite { setGamePolicy(i, d) }
     }
 
-    private fun stopListening() {
-        statesListener?.let { l -> statesRef?.removeEventListener(l) }
-        statesListener = null
-        statesRef = null
-
-        pointsListener?.let { l -> pointsRef?.removeEventListener(l) }
-        pointsListener = null
-        pointsRef = null
-
-        privatePointsListener?.let { l -> privatePointsRef?.removeEventListener(l) }
-        privatePointsListener = null
-        privatePointsRef = null
-
-        enemyListener?.let { l -> enemyRef?.removeEventListener(l) }
-        enemyListener = null
-        enemyRef = null
-
-        commandsListener?.let { l -> commandsRef?.removeEventListener(l) }
-        commandsListener = null
-        commandsRef = null
-
-        activeCommandExpiryJob?.cancel()
-        activeCommandExpiryJob = null
+    fun setSilentPolicy(intervalSec: Int, distanceM: Int) {
+        val i = intervalSec.coerceIn(1, 120)
+        val d = distanceM.coerceIn(1, 500)
+        updateState { it.copy(settings = it.settings.copy(silentIntervalSec = i, silentDistanceM = d)) }
+        launchPrefsWrite { setSilentPolicy(i, d) }
     }
 
-    private fun vibrateAndBeep(strong: Boolean) {
-        // Strong = clearly noticeable in noisy outdoor conditions.
-        try {
-            if (strong) {
-                // 3 pulses
-                val timings = longArrayOf(0, 90, 60, 120, 60, 220)
-                vibrator?.vibrate(VibrationEffect.createWaveform(timings, -1))
-            } else {
-                vibrator?.vibrate(VibrationEffect.createOneShot(200L, VibrationEffect.DEFAULT_AMPLITUDE))
-            }
-        } catch (_: Throwable) {
-        }
-        try {
-            // Use a harsher tone for strong alerts.
-            val toneType = if (strong) ToneGenerator.TONE_SUP_ERROR else ToneGenerator.TONE_PROP_BEEP
-            val dur = if (strong) 450 else 160
-            tone.startTone(toneType, dur)
-        } catch (_: Throwable) {
-        }
+    fun setLocationPermission(granted: Boolean) {
+        updateState { it.copy(tracking = it.tracking.copy(hasLocationPermission = granted)) }
+        if (!granted) stopTracking()
     }
 
-    private fun startDeadReminder() {
-        if (deadReminderJob != null) return
-        deadReminderJob = viewModelScope.launch {
-            while (true) {
-                delay(10 * 60_000L)
-                // Remind as long as the user is in DEAD mode (even if tracking was stopped by accident).
-                if (_ui.value.playerMode != PlayerMode.DEAD) continue
-                vibrateAndBeep(strong = true)
-            }
-        }
-    }
-
-    private fun stopDeadReminder() {
-        deadReminderJob?.cancel()
-        deadReminderJob = null
-    }
-
-    private fun scheduleCommandExpiry(cmd: QuickCommand) {
-        activeCommandExpiryJob?.cancel()
-        activeCommandExpiryJob = viewModelScope.launch {
-            val now = System.currentTimeMillis()
-            val wait = (cmd.createdAtMs + 60_000L - now).coerceAtLeast(0L)
-            delay(wait)
-            // Only clear if it is still the same command
-            if (_ui.value.activeCommand?.id == cmd.id) {
-                _ui.update { it.copy(activeCommand = null) }
-            }
-        }
-    }
-
-    private fun sendStateNow(code: String, uid: String, nick: String, point: LocationPoint) {
-        val s = _ui.value
-        val payload = mapOf(
-            "callsign" to nick,
-            "lat" to point.lat,
-            "lon" to point.lon,
-            "acc" to point.accMeters,
-            "speed" to point.speedMps,
-            "heading" to (s.myHeadingDeg ?: point.headingDeg),
-            "ts" to point.timestampMs,
-            "mode" to s.playerMode.name,
-            "anchored" to s.isAnchored,
-            "sosUntilMs" to s.mySosUntilMs,
+    fun refreshLocationReadiness() {
+        val update = locationReadinessCoordinator.refreshReadiness(
+            state = readState(),
+            permissionError = tr(R.string.vm_error_location_permission_required),
+            servicesDisabledError = tr(R.string.vm_error_location_services_disabled),
+            trackingDisabledError = tr(R.string.vm_error_location_disabled_during_tracking),
         )
-        db.child("teams").child(code).child("state").child(uid).setValue(payload)
-            .addOnFailureListener { e ->
-                noteWriteError("Не удалось отправить координаты", e)
-            }
+        updateState { update.updatedState }
+        if (update.shouldRefreshPreview) refreshTargetsFromState()
     }
 
-    /**
-     * Location updates are requested frequently; sending to RTDB is rate-limited by [playerMode]/anchor logic.
-     */
-    fun startTracking(mode: TrackingMode, persistMode: Boolean = true) {
-        if (!_ui.value.hasLocationPermission) {
-            emitError("Нужен доступ к геолокации")
-            return
-        }
-        val code = _ui.value.teamCode ?: return
-        val uid = _ui.value.uid ?: return
-        val nick = _ui.value.callsign.ifBlank { "Игрок" }
+    fun togglePlayerMode() {
+        setPlayerMode(if (readState().playerMode == PlayerMode.GAME) PlayerMode.DEAD else PlayerMode.GAME)
+    }
 
-        if (persistMode) {
-            // remember last profile used (so next time it's the default)
-            _ui.update { it.copy(defaultMode = mode) }
-            viewModelScope.launch { prefs.setDefaultMode(mode) }
-        }
+    fun setPlayerMode(mode: PlayerMode) {
+        updateState { it.copy(team = it.team.copy(playerMode = mode)) }
+        if (mode == PlayerMode.DEAD) teamCompassAlertEffectsCoordinator.startDeadReminder()
+        else teamCompassAlertEffectsCoordinator.stopDeadReminder()
+        trackingController.updateStatus(mode, readState().mySosUntilMs, forceSend = true)
+        refreshTargetsFromState()
+    }
 
-        startHeading()
-        val policy = TrackingPolicy(
-            minIntervalMs = when (mode) {
-                TrackingMode.GAME -> _ui.value.gameIntervalSec * 1000L
-                TrackingMode.SILENT -> _ui.value.silentIntervalSec * 1000L
-            },
-            minDistanceMeters = when (mode) {
-                TrackingMode.GAME -> _ui.value.gameDistanceM.toDouble()
-                TrackingMode.SILENT -> _ui.value.silentDistanceM.toDouble()
-            }
+    fun toggleSos() {
+        if (readState().mySosUntilMs > System.currentTimeMillis()) clearSos() else triggerSos()
+    }
+
+    fun triggerSos() {
+        val until = System.currentTimeMillis() + 120_000L
+        updateState { it.copy(team = it.team.copy(mySosUntilMs = until)) }
+        trackingController.updateStatus(readState().playerMode, until, forceSend = true)
+    }
+
+    fun clearSos() {
+        updateState { it.copy(team = it.team.copy(mySosUntilMs = 0L)) }
+        trackingController.updateStatus(readState().playerMode, 0L, forceSend = true)
+    }
+
+    fun setEnemyMarkEnabled(enabled: Boolean) {
+        updateState { it.copy(map = it.map.copy(enemyMarkEnabled = enabled)) }
+    }
+
+    fun importTacticalMap(uri: android.net.Uri) = mapActionsCoordinator.importMap(uri)
+    fun clearTacticalMap() = mapActionsCoordinator.clearMap()
+    fun setMapEnabled(enabled: Boolean) = mapActionsCoordinator.setMapEnabled(enabled)
+    fun setMapOpacity(opacity: Float) = mapActionsCoordinator.setMapOpacity(opacity)
+
+    fun saveMapChangesToSource(newPoints: List<KmlPoint>, deletedPoints: List<KmlPoint> = emptyList()) {
+        mapActionsCoordinator.saveChangesToSource(newPoints = newPoints, deletedPoints = deletedPoints)
+    }
+
+    fun saveMapChangesAs(
+        uri: android.net.Uri,
+        newPoints: List<KmlPoint>,
+        deletedPoints: List<KmlPoint> = emptyList(),
+    ) {
+        mapActionsCoordinator.saveChangesAs(uri = uri, newPoints = newPoints, deletedPoints = deletedPoints)
+    }
+
+    fun addPointAt(lat: Double, lon: Double, label: String, icon: String, forTeam: Boolean) {
+        tacticalActionsCoordinator.addPointAt(
+            lat = lat,
+            lon = lon,
+            label = label,
+            icon = icon,
+            forTeam = forTeam,
+            addPointFailedMessage = tr(R.string.vm_error_add_point_failed),
+            invalidInputMessage = tr(R.string.error_invalid_input),
         )
-
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, (policy.minIntervalMs / 2).coerceAtLeast(2_000L))
-            .setMinUpdateDistanceMeters(0f)
-            .build()
-
-        @SuppressLint("MissingPermission")
-        fun doRequest() {
-            val cb = object : LocationCallback() {
-                override fun onLocationResult(result: LocationResult) {
-                    val loc = result.lastLocation ?: return
-                    onLocation(loc, code, uid, nick, policy)
-                }
-            }
-            locationCallback = cb
-            fused.requestLocationUpdates(request, cb, null)
-                .addOnFailureListener { e ->
-                    noteWriteError("Не удалось запустить трекинг", e)
-                }
-            lastSentMs = 0L
-            lastMoveMs = 0L
-            lastMoveLoc = null
-            _ui.update {
-                it.copy(
-                    isTracking = true,
-                    telemetry = it.telemetry.copy(lastLocationAtMs = System.currentTimeMillis()),
-                )
-            }
-            ContextCompat.startForegroundService(
-                getApplication(),
-                Intent(getApplication(), TrackingService::class.java),
-            )
-            if (_ui.value.playerMode == PlayerMode.DEAD) startDeadReminder()
-            startTrackingWatchdog()
-        }
-
-        // warm up (fast last known)
-        @SuppressLint("MissingPermission")
-        fused.lastLocation.addOnSuccessListener { loc ->
-            if (loc != null) onLocation(loc, code, uid, nick, policy)
-            doRequest()
-        }.addOnFailureListener {
-            doRequest()
-        }
     }
 
-    private fun restartTracking() {
-        if (!_ui.value.isTracking) return
-        val mode = _ui.value.defaultMode
-        stopTracking()
-        startTracking(mode, persistMode = false)
-    }
-
-    private fun onLocation(loc: Location, code: String, uid: String, nick: String, policy: TrackingPolicy) {
-        val prevAnchored = _ui.value.isAnchored
-        val now = System.currentTimeMillis()
-        val heading = _ui.value.myHeadingDeg
-        val point = LocationPoint(
-            lat = loc.latitude,
-            lon = loc.longitude,
-            accMeters = loc.accuracy.toDouble(),
-            speedMps = loc.speed.toDouble(),
-            headingDeg = heading,
-            timestampMs = now,
+    fun updatePoint(id: String, lat: Double, lon: Double, label: String, icon: String, isTeam: Boolean) {
+        tacticalActionsCoordinator.updatePoint(
+            id = id,
+            lat = lat,
+            lon = lon,
+            label = label,
+            icon = icon,
+            isTeam = isTeam,
+            onlyAuthorEditMessage = tr(R.string.vm_error_only_author_edit_team_point),
+            updatePointFailedMessage = tr(R.string.vm_error_update_point_failed),
+            invalidInputMessage = tr(R.string.error_invalid_input),
         )
-        // Movement / anchor detection
-        val moveDistanceM = lastMoveLoc?.distanceTo(loc)?.toDouble() ?: Double.MAX_VALUE
-        val moved = run {
-            if (moveDistanceM == Double.MAX_VALUE || moveDistanceM >= 5.0) {
-                lastMoveLoc = Location(loc)
-                lastMoveMs = now
-                true
-            } else {
-                false
-            }
-        }
-
-        val mode = _ui.value.playerMode
-        val anchored = (mode == PlayerMode.GAME) && (now - lastMoveMs >= 3 * 60_000L)
-        _ui.update {
-            it.copy(
-                me = point,
-                isAnchored = anchored,
-                telemetry = it.telemetry.copy(lastLocationAtMs = now),
-            )
-        }
-
-        val intervalMs = when {
-            mode == PlayerMode.DEAD -> 60_000L
-            anchored -> (policy.minIntervalMs * 3).coerceAtMost(60_000L)
-            else -> policy.minIntervalMs
-        }
-
-        val movedEnough = moveDistanceM >= policy.minDistanceMeters
-
-        // Rate-limit writes to RTDB
-        val shouldSend = (lastSentMs == 0L) || (now - lastSentMs >= intervalMs) || movedEnough
-        if (shouldSend) {
-            sendStateNow(code, uid, nick, point)
-            lastSentMs = now
-        } else {
-            // If we moved after being anchored, force a quick refresh.
-            if (moved && prevAnchored && mode == PlayerMode.GAME) {
-                lastSentMs = 0L
-            }
-        }
     }
 
-    fun stopTracking() {
-        locationCallback?.let { fused.removeLocationUpdates(it) }
-        locationCallback = null
-        stopHeading()
-        stopDeadReminder()
-        stopTrackingWatchdog()
-        getApplication<Application>().stopService(Intent(getApplication(), TrackingService::class.java))
-        _ui.update { it.copy(isTracking = false) }
+    fun deletePoint(id: String, isTeam: Boolean) {
+        tacticalActionsCoordinator.deletePoint(
+            id = id,
+            isTeam = isTeam,
+            onlyAuthorDeleteMessage = tr(R.string.vm_error_only_author_delete_team_point),
+            deletePointFailedMessage = tr(R.string.vm_error_delete_point_failed),
+        )
     }
 
-    private fun startTrackingWatchdog() {
-        trackingWatchdogJob?.cancel()
-        trackingWatchdogJob = viewModelScope.launch {
-            while (true) {
-                delay(20_000L)
-                val s = _ui.value
-                if (!s.isTracking) continue
-                val staleForMs = System.currentTimeMillis() - s.telemetry.lastLocationAtMs
-                if (s.telemetry.lastLocationAtMs > 0L && staleForMs > 45_000L) {
-                    Log.w(TAG, "Tracking watchdog restart, staleForMs=$staleForMs")
-                    _ui.update {
-                        it.copy(
-                            telemetry = it.telemetry.copy(
-                                trackingRestarts = it.telemetry.trackingRestarts + 1,
-                                lastTrackingRestartReason = "No location for ${staleForMs}ms",
-                            )
-                        )
-                    }
-                    restartTracking()
-                }
-            }
-        }
+    fun sendQuickCommand(type: QuickCommandType) {
+        tacticalActionsCoordinator.sendQuickCommand(type, tr(R.string.vm_error_quick_command_failed))
     }
 
-    private fun stopTrackingWatchdog() {
-        trackingWatchdogJob?.cancel()
-        trackingWatchdogJob = null
-    }
-
-    fun dismissError() {
-        _ui.update { it.copy(lastError = null) }
+    fun addEnemyPing(lat: Double, lon: Double, type: QuickCommandType) {
+        tacticalActionsCoordinator.addEnemyPing(
+            lat = lat,
+            lon = lon,
+            type = type,
+            enemyMarkFailedMessage = tr(R.string.vm_error_enemy_mark_failed),
+            invalidInputMessage = tr(R.string.error_invalid_input),
+        )
     }
 
     fun computeTargets(nowMs: Long): List<com.example.teamcompass.core.CompassTarget> {
-        val me = _ui.value.me ?: return emptyList()
-        val heading = _ui.value.myHeadingDeg ?: 0.0
-        return calculator.buildTargets(me, heading, _ui.value.players, nowMs)
+        return targetFilterCoordinator.buildTargetsForState(readState(), nowMs).second
     }
 
-    private fun startHeading() {
-        if (rotationSensor == null || sensorManager == null) {
-            _ui.update { it.copy(myHeadingDeg = null) }
+    fun setTargetPreset(preset: TargetFilterPreset) {
+        targetFilterDirtyByUser = true
+        updateState { it.copy(filter = it.filter.copy(targetFilterState = it.targetFilterState.copy(preset = preset))) }
+        refreshTargetsFromState()
+    }
+
+    fun setNearRadius(nearRadiusM: Int) {
+        targetFilterDirtyByUser = true
+        updateState {
+            it.copy(filter = it.filter.copy(targetFilterState = it.targetFilterState.copy(nearRadiusM = nearRadiusM.coerceIn(50, 500))))
+        }
+        refreshTargetsFromState()
+    }
+
+    fun setShowDead(showDead: Boolean) {
+        targetFilterDirtyByUser = true
+        updateState { it.copy(filter = it.filter.copy(targetFilterState = it.targetFilterState.copy(showDead = showDead))) }
+        refreshTargetsFromState()
+    }
+
+    fun setShowStale(showStale: Boolean) {
+        targetFilterDirtyByUser = true
+        updateState { it.copy(filter = it.filter.copy(targetFilterState = it.targetFilterState.copy(showStale = showStale))) }
+        refreshTargetsFromState()
+    }
+
+    fun setFocusMode(focusMode: Boolean) {
+        targetFilterDirtyByUser = true
+        updateState { it.copy(filter = it.filter.copy(targetFilterState = it.targetFilterState.copy(focusMode = focusMode))) }
+        refreshTargetsFromState()
+    }
+
+    fun startTracking(mode: TrackingMode, persistMode: Boolean = true) {
+        val readiness = locationReadinessCoordinator.refreshReadiness(
+            state = readState(),
+            permissionError = tr(R.string.vm_error_location_permission_required),
+            servicesDisabledError = tr(R.string.vm_error_location_services_disabled),
+            trackingDisabledError = tr(R.string.vm_error_location_disabled_during_tracking),
+        )
+        updateState { readiness.updatedState }
+        val state = readState()
+        if (!state.hasLocationPermission) {
+            emitError(tr(R.string.vm_error_location_permission_required))
             return
         }
-        if (sensorListener != null) return
-
-        _headingContinuous = null
-        val listener = object : SensorEventListener {
-            private val rot = FloatArray(9)
-            private val ori = FloatArray(3)
-            private val out = FloatArray(9)
-
-            override fun onSensorChanged(event: SensorEvent) {
-                if (event.sensor.type != Sensor.TYPE_ROTATION_VECTOR) return
-                SensorManager.getRotationMatrixFromVector(rot, event.values)
-
-                // Adjust for the current display rotation.
-                // Without this, heading can be off by 90° when the phone is mounted sideways (e.g. in a chest rig).
-                val rotation = try { windowManager?.defaultDisplay?.rotation } catch (_: Throwable) { null } ?: Surface.ROTATION_0
-                when (rotation) {
-                    Surface.ROTATION_0 -> SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_X, SensorManager.AXIS_Y, out)
-                    Surface.ROTATION_90 -> SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_Y, SensorManager.AXIS_MINUS_X, out)
-                    Surface.ROTATION_180 -> SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_MINUS_X, SensorManager.AXIS_MINUS_Y, out)
-                    Surface.ROTATION_270 -> SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_MINUS_Y, SensorManager.AXIS_X, out)
-                    else -> System.arraycopy(rot, 0, out, 0, 9)
-                }
-                SensorManager.getOrientation(out, ori)
-
-                // Raw azimuth in degrees (0..360)
-                var raw = Math.toDegrees(ori[0].toDouble())
-                if (raw < 0) raw += 360.0
-
-                // Smooth heading without 360->0 jumps:
-                // keep a continuous value and move towards the nearest equivalent of raw.
-                fun norm360(x: Double): Double {
-                    var v = x % 360.0
-                    if (v < 0) v += 360.0
-                    return v
-                }
-                fun shortestDelta(fromDeg: Double, toDeg: Double): Double {
-                    var d = (toDeg - fromDeg + 540.0) % 360.0 - 180.0
-                    // keep in [-180, 180]
-                    return d
-                }
-
-                val prevCont = _headingContinuous
-                val alpha = 0.18 // responsiveness (0..1). Bigger = faster, smaller = smoother.
-                val nextCont = if (prevCont == null) {
-                    raw
-                } else {
-                    val prevNorm = norm360(prevCont)
-                    prevCont + shortestDelta(prevNorm, raw) * alpha
-                }
-                _headingContinuous = nextCont
-
-                _ui.update { it.copy(myHeadingDeg = nextCont) }
-            }
-
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        if (!state.isLocationServiceEnabled) {
+            emitError(tr(R.string.vm_error_location_services_disabled))
+            return
         }
-
-        sensorListener = listener
-        sensorManager.registerListener(listener, rotationSensor, SensorManager.SENSOR_DELAY_GAME)
+        val teamCode = state.teamCode ?: return
+        val uid = state.uid ?: return
+        if (persistMode) {
+            updateState { it.copy(tracking = it.tracking.copy(defaultMode = mode)) }
+            launchPrefsWrite { setDefaultMode(mode) }
+        }
+        teamCompassDeviceUiCoordinator.startHeading()
+        teamCompassDeviceUiCoordinator.startLocationServiceMonitor()
+        trackingCoordinator.start(
+            request = TrackingCoordinator.StartRequest(
+                teamCode = teamCode,
+                uid = uid,
+                callsign = state.callsign,
+                mode = mode,
+                gameIntervalSec = state.gameIntervalSec,
+                gameDistanceM = state.gameDistanceM,
+                silentIntervalSec = state.silentIntervalSec,
+                silentDistanceM = state.silentDistanceM,
+                playerMode = state.playerMode,
+                sosUntilMs = state.mySosUntilMs,
+            ),
+            isCurrentlyTracking = state.isTracking,
+        )
+        if (!state.hasStartedOnce) teamCompassDeviceUiCoordinator.setHasStartedOnce(true)
     }
 
-    private fun stopHeading() {
-        sensorListener?.let { l -> sensorManager?.unregisterListener(l) }
-        sensorListener = null
-        _headingContinuous = null
+    fun stopTracking() {
+        trackingCoordinator.stop()
+    }
+
+    fun startBluetoothScan() {
+        teamCompassDeviceUiCoordinator.startBluetoothScan()
+    }
+
+    fun bindAutoBrightnessWindow(window: Window?) {
+        teamCompassDeviceUiCoordinator.bindAutoBrightnessWindow(window)
+    }
+
+    fun setTeamViewMode(mode: TeamViewMode) {
+        updateState { it.copy(team = it.team.copy(viewMode = mode)) }
+    }
+
+    fun setControlLayoutEdit(enabled: Boolean) {
+        updateState { it.copy(settings = it.settings.copy(controlLayoutEditEnabled = enabled)) }
+        launchPrefsWrite { setControlLayoutEdit(enabled) }
+    }
+
+    fun resetControlPositions() {
+        updateState { it.copy(settings = it.settings.copy(controlPositions = defaultCompassControlPositions())) }
+        launchPrefsWrite { resetControlPositions() }
+    }
+
+    fun markCompassHelpSeen() {
+        updateState { it.copy(settings = it.settings.copy(showCompassHelpOnce = false)) }
+        launchPrefsWrite { setShowCompassHelpOnce(false) }
+    }
+
+    fun assignTeamMemberRole(targetUid: String, patch: TeamRolePatch) {
+        val teamCode = readState().teamCode ?: return
+        val actorUid = readState().uid ?: return
+        viewModelScope.launch(coroutineExceptionHandler) {
+            when (val result = teamRepository.assignTeamMemberRole(teamCode, actorUid, targetUid, patch)) {
+                is TeamActionResult.Success -> updateState { state ->
+                    val next = state.roleProfiles.filterNot { it.uid == result.value.uid } + result.value
+                    state.copy(team = state.team.copy(roleProfiles = next))
+                }
+                is TeamActionResult.Failure -> handleActionFailure(tr(R.string.vm_error_assign_role_failed), result.details)
+            }
+        }
+    }
+
+    fun assignTeamMemberRolesBulk(targetUids: List<String>, patch: TeamRolePatch) {
+        val targets = targetUids.distinct().filter { it.isNotBlank() }
+        if (targets.isEmpty()) return
+        val teamCode = readState().teamCode ?: return
+        val actorUid = readState().uid ?: return
+        viewModelScope.launch(coroutineExceptionHandler) {
+            var success = 0
+            var fail = 0
+            targets.forEach { targetUid ->
+                when (teamRepository.assignTeamMemberRole(teamCode, actorUid, targetUid, patch)) {
+                    is TeamActionResult.Success -> success++
+                    is TeamActionResult.Failure -> fail++
+                }
+            }
+            when {
+                fail == 0 -> Unit
+                success > 0 -> emitError(tr(R.string.vm_error_bulk_assign_partial_format, success, fail))
+                else -> emitError(tr(R.string.vm_error_bulk_assign_failed_format, fail))
+            }
+        }
+    }
+    fun dismissError() {
+        updateState { it.copy(lastError = null) }
+    }
+
+    fun setUiForTest(update: (UiState) -> UiState) {
+        updateState(update)
+    }
+
+    fun refreshBackendStaleFlagForTest(nowMs: Long = System.currentTimeMillis()) {
+        backendAvailabilityCoordinator.refreshStaleFlag(
+            nowMs = nowMs,
+            backendDownMessage = tr(R.string.vm_error_backend_unavailable_retrying),
+        )
+    }
+
+    private fun onRemoteMemberPrefs(prefs: TeamMemberPrefs?) {
+        val next = targetFilterCoordinator.fromRemotePrefs(prefs)
+        targetFilterDirtyByUser = false
+        updateState { state ->
+            if (state.filter.targetFilterState == next) state
+            else state.copy(filter = state.filter.copy(targetFilterState = next))
+        }
+        refreshTargetsFromState()
+    }
+
+    private fun refreshTargetsFromState(nowMs: Long = System.currentTimeMillis()) {
+        val (prioritized, display) = targetFilterCoordinator.buildTargetsForState(readState(), nowMs)
+        updateState { state ->
+            state.copy(
+                filter = state.filter.copy(
+                    prioritizedTargets = prioritized,
+                    displayTargets = display,
+                ),
+            )
+        }
+    }
+
+    private fun stopListening() {
+        teamCompassSessionListeningCoordinator.stopListening()
+    }
+
+    private fun readState(): UiState = _ui.value
+
+    private fun updateState(update: (UiState) -> UiState) {
+        _ui.update(update)
+    }
+
+    private fun emitError(message: String) {
+        emitError(message, null)
+    }
+
+    private fun emitError(message: String, cause: Throwable?) {
+        if (cause != null) Log.w(TAG, message, cause) else Log.w(TAG, message)
+        _ui.update { it.copy(lastError = message) }
+        _events.tryEmit(UiEvent.Error(message))
+    }
+
+    private fun handleActionFailure(defaultMessage: String, failure: TeamActionFailure) {
+        emitError(TeamActionErrorPolicy.toUserMessage(app, defaultMessage, failure), failure.cause)
+    }
+
+    private fun newTraceId(action: String): String = actionTraceIdProvider.nextTraceId(action)
+
+    private fun logActionStart(action: String, traceId: String, teamCode: String?, uid: String?) {
+        structuredLogger.logStart(action, traceId, teamCode, uid, readState().telemetry.backendAvailable)
+    }
+
+    private fun logActionSuccess(action: String, traceId: String, teamCode: String?, uid: String?) {
+        structuredLogger.logSuccess(action, traceId, teamCode, uid, readState().telemetry.backendAvailable)
+    }
+
+    private fun logActionFailure(
+        action: String,
+        traceId: String,
+        throwable: Throwable?,
+        message: String?,
+        teamCode: String?,
+        uid: String?,
+    ) {
+        structuredLogger.logFailure(
+            action = action,
+            traceId = traceId,
+            teamCode = teamCode,
+            uid = uid,
+            backendAvailable = readState().telemetry.backendAvailable,
+            throwable = throwable,
+            message = message,
+        )
+    }
+
+    private fun launchPrefsWrite(write: suspend UserPrefs.() -> Unit) {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            prefs.write()
+        }
+    }
+
+    private fun tr(@StringRes resId: Int, vararg args: Any): String {
+        return if (args.isEmpty()) app.getString(resId) else app.getString(resId, *args)
     }
 
     override fun onCleared() {
-        try { tone.release() } catch (_: Throwable) {}
+        stopListening()
+        trackingCoordinator.stop()
+        teamCompassAlertEffectsCoordinator.shutdown()
+        teamCompassDeviceUiCoordinator.onCleared()
+        runCatching { tone.release() }
         super.onCleared()
     }
 
-    private fun generateCode(): String {
-        return Random.nextInt(0, 1_000_000).toString().padStart(6, '0')
-    }
-
     companion object {
+        const val STALE_WARNING_MS: Long = 30_000L
+
+        fun locationServicePollIntervalMs(isTracking: Boolean): Long {
+            return if (isTracking) 2_000L else 12_000L
+        }
+
         private const val TAG = "TeamCompassVM"
     }
 }

@@ -1,22 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Splash screen animated icon — same compass, multicam palette.
+    viewport 128×128, centred on 64,64.
+    Outer ring R=38, inner cutout R=28.
+    North needle top Y=22, south Y=106.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="128dp"
     android:height="128dp"
     android:viewportWidth="128"
     android:viewportHeight="128">
+
+    <!-- Outer ring fill -->
     <path
-        android:fillColor="#1B5E20"
-        android:pathData="M64,8C33.07,8 8,33.07 8,64s25.07,56 56,56 56,-25.07 56,-56S94.93,8 64,8zM64,18c25.41,0 46,20.59 46,46s-20.59,46 -46,46 -46,-20.59 -46,-46S38.59,18 64,18z"/>
+        android:fillColor="#5F6B4A"
+        android:fillType="evenOdd"
+        android:pathData="M64,26
+                          A38,38 0 1,1 64,102
+                          A38,38 0 1,1 64,26
+                          M64,36
+                          A28,28 0 1,0 64,92
+                          A28,28 0 1,0 64,36" />
+
+    <!-- North needle (light) -->
     <path
-        android:fillColor="#E8F5E9"
-        android:pathData="M64,30c-18.78,0 -34,15.22 -34,34s15.22,34 34,34 34,-15.22 34,-34 -15.22,-34 -34,-34zM64,36c15.46,0 28,12.54 28,28s-12.54,28 -28,28 -28,-12.54 -28,-28 12.54,-28 28,-28z"/>
+        android:fillColor="#E8E4D5"
+        android:pathData="M64,22 L76,64 L64,59 L52,64 Z" />
+
+    <!-- South needle (muted) -->
     <path
-        android:fillColor="#FFCDD2"
-        android:pathData="M80,44 56,72 48,84 72,56z"/>
+        android:fillColor="#A89F81"
+        android:pathData="M64,106 L76,64 L64,69 L52,64 Z" />
+
+    <!-- Centre pivot -->
     <path
-        android:fillColor="#C8E6C9"
-        android:pathData="M48,84 72,56 80,44 56,72z"/>
-    <path
-        android:fillColor="#E8F5E9"
-        android:pathData="M62,20h4v16h-4z"/>
+        android:fillColor="#3D4431"
+        android:pathData="M64,57 L71,64 L64,71 L57,64 Z" />
+
 </vector>

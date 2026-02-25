@@ -10,6 +10,10 @@ data class TacticalMap(
     val name: String,
     /** Absolute directory path where map was extracted (app internal storage). */
     val dirPath: String,
+    /** Relative path inside [dirPath] for the main editable KML document. */
+    val mainKmlRelativePath: String,
+    /** Source document URI used for direct overwrite save, when permission is available. */
+    val sourceUriString: String? = null,
     val groundOverlay: GroundOverlay? = null,
     val points: List<KmlPoint> = emptyList(),
     val lines: List<KmlLine> = emptyList(),
@@ -31,8 +35,13 @@ data class GroundOverlay(
 data class KmlPoint(
     val id: String,
     val name: String,
+    val description: String = "",
     val lat: Double,
     val lon: Double,
+    /** Optional icon id from [TacticalIconId.raw]. */
+    val iconRaw: String? = null,
+    /** Optional ARGB color in 0xAARRGGBB format. */
+    val colorArgb: Long? = null,
 )
 
 data class KmlLine(

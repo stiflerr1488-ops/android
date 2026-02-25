@@ -1,48 +1,69 @@
 package com.example.teamcompass.ui.theme
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.os.Build
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Shapes
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.example.teamcompass.R
 
-// Military palette: olive + sand
+// Multicam Tropic Color Scheme
+// Military tactical camouflage with greens, browns, and tans
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF6B7D2A),
-    onPrimary = Color(0xFF10120B),
-    secondary = Color(0xFFC2B280),
-    onSecondary = Color(0xFF10120B),
-    tertiary = Color(0xFFD9A441),
-    onTertiary = Color(0xFF10120B),
+    primary = MulticamGreen,
+    onPrimary = MulticamOnSurface,
+    secondary = MulticamTan,
+    onSecondary = MulticamBackground,
+    tertiary = MulticamWarning,
+    onTertiary = MulticamBackground,
 
-    background = Color(0xFF0E0F0A),
-    onBackground = Color(0xFFEFE6CF),
+    background = MulticamBackground,
+    onBackground = MulticamOnBackground,
 
-    surface = Color(0xFF14150D),
-    onSurface = Color(0xFFEFE6CF),
+    surface = MulticamSurface,
+    onSurface = MulticamOnSurface,
 
-    surfaceVariant = Color(0xFF1B1D12),
-    onSurfaceVariant = Color(0xFFBFB59C),
+    surfaceVariant = MulticamSurfaceVariant,
+    onSurfaceVariant = MulticamOnSurfaceVariant,
+
+    error = MulticamError,
+    onError = MulticamOnSurface,
 )
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF4E5E1F),
-    onPrimary = Color.White,
-    secondary = Color(0xFF9E8F61),
-    onSecondary = Color.White,
-    tertiary = Color(0xFF8A5A00),
-    onTertiary = Color.White,
+    primary = MulticamOlive,
+    onPrimary = MulticamBackground,
+    secondary = MulticamSand,
+    onSecondary = MulticamBackground,
+    tertiary = MulticamWarning,
+    onTertiary = MulticamBackground,
 
-    background = Color(0xFFF4EEDB),
-    onBackground = Color(0xFF16170F),
+    background = Color(0xFFF5F3ED),
+    onBackground = MulticamBackground,
 
-    surface = Color(0xFFFDF9EE),
-    onSurface = Color(0xFF16170F),
+    surface = Color(0xFFFAF9F5),
+    onSurface = MulticamBackground,
 
-    surfaceVariant = Color(0xFFECE4CD),
-    onSurfaceVariant = Color(0xFF3A3A2A),
+    surfaceVariant = Color(0xFFE8E6DD),
+    onSurfaceVariant = MulticamDarkGreen,
+
+    error = MulticamError,
+    onError = MulticamOnSurface,
 )
 
 
@@ -52,16 +73,73 @@ private val AppShapes = Shapes(
     large = RoundedCornerShape(Radius.lg),
 )
 
+/**
+ * Режим темы
+ */
+enum class ThemeMode {
+    SYSTEM, // Следовать настройкам системы
+    LIGHT,  // Всегда светлая
+    DARK    // Всегда тёмная
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 @Composable
 fun TeamCompassTheme(
-    darkTheme: Boolean = true,
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
     content: @Composable () -> Unit
 ) {
+    val darkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+
     val colors = if (darkTheme) DarkColors else LightColors
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = view.context.findActivity()?.window ?: return@SideEffect
+            // Устанавливаем цвет статус-бара в цвет фона
+            window.statusBarColor = colors.background.toArgb()
+            // Для Android 10+ устанавливаем цвет навигационной панели
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.navigationBarColor = colors.surface.toArgb()
+            }
+        }
+    }
+
+    // Explicitly override Snackbar colors for Dark Theme consistency
+    val tacticalColorScheme = colors.copy(
+        inverseSurface = MulticamSurfaceVariant,
+        inverseOnSurface = MulticamOnBackground,
+        inversePrimary = MulticamGreen
+    )
+
     MaterialTheme(
-        colorScheme = colors,
+        colorScheme = tacticalColorScheme,
         typography = Typography,
         shapes = AppShapes,
         content = content
     )
+}
+
+@Composable
+fun MulticamBackgroundWithPattern(content: @Composable () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Background pattern
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(R.drawable.bg_multicam_pattern),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Content
+        content()
+    }
 }

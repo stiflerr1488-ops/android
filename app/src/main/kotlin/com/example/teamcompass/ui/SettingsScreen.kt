@@ -1,40 +1,29 @@
 package com.example.teamcompass.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import com.example.teamcompass.R
 import com.example.teamcompass.core.TrackingMode
 import com.example.teamcompass.ui.theme.Spacing
 
@@ -46,25 +35,39 @@ fun SettingsScreen(
     onDefaultMode: (TrackingMode) -> Unit,
     onGamePolicy: (intervalSec: Int, distanceM: Int) -> Unit,
     onSilentPolicy: (intervalSec: Int, distanceM: Int) -> Unit,
+    onControlLayoutEdit: (Boolean) -> Unit,
+    onResetControlPositions: () -> Unit,
+    onApplyRightHandLayout: () -> Unit = {},
+    onApplyLeftHandLayout: () -> Unit = {},
+    onAutoBrightnessEnabled: (Boolean) -> Unit = {},
+    onScreenBrightness: (Float) -> Unit = {},
+    onThemeMode: (com.example.teamcompass.ui.theme.ThemeMode) -> Unit = {},
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Настройки", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.label_settings), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.nav_back),
+                        )
                     }
                 },
                 actions = {
-                    Icon(Icons.Default.Tune, contentDescription = "Параметры", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(
+                        Icons.Default.Tune,
+                        contentDescription = stringResource(R.string.settings_parameters_cd),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Spacer(Modifier.padding(Spacing.xs))
                 },
-                scrollBehavior = scrollBehavior
+                scrollBehavior = scrollBehavior,
             )
-        }
+        },
     ) { padding ->
         Column(
             Modifier
@@ -72,179 +75,55 @@ fun SettingsScreen(
                 .padding(padding)
                 .padding(Spacing.md)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(Spacing.lg),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    Text("Режим по умолчанию", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Можно быстро переключать в шапке компаса. Изменения сохраняются на телефоне.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    val gameSelected = state.defaultMode == TrackingMode.GAME
-                    BinaryChoiceButtons(
-                        modifier = Modifier.fillMaxWidth(),
-                        leftText = "Игра",
-                        rightText = "Тихо",
-                        leftSelected = gameSelected,
-                        onLeftClick = { if (!gameSelected) onDefaultMode(TrackingMode.GAME) },
-                        onRightClick = { if (gameSelected) onDefaultMode(TrackingMode.SILENT) },
-                    )
-                }
-            }
+            SettingsDefaultModeCard(
+                state = state,
+                onDefaultMode = onDefaultMode,
+            )
 
             PolicyCard(
-                title = "Профиль: Игра",
-                subtitle = "Часто и чуть точнее (для активной фазы).",
+                title = stringResource(R.string.settings_profile_game_title),
+                subtitle = stringResource(R.string.settings_profile_game_subtitle),
                 intervalSec = state.gameIntervalSec,
                 distanceM = state.gameDistanceM,
-                intervalRange = 1..15,
+                intervalRange = 3..20,
                 distanceRange = 5..50,
-                onChange = onGamePolicy
+                onChange = onGamePolicy,
             )
 
             PolicyCard(
-                title = "Профиль: Тихо",
-                subtitle = "Реже и экономнее (для перемещений/ожидания).",
+                title = stringResource(R.string.settings_profile_silent_title),
+                subtitle = stringResource(R.string.settings_profile_silent_subtitle),
                 intervalSec = state.silentIntervalSec,
                 distanceM = state.silentDistanceM,
-                intervalRange = 5..60,
+                intervalRange = 10..60,
                 distanceRange = 10..150,
-                onChange = onSilentPolicy
+                onChange = onSilentPolicy,
             )
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(Spacing.lg),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    Text("Диагностика", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Сеть/база",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "Ошибки чтения: ${state.telemetry.rtdbReadErrors} · Ошибки записи: ${state.telemetry.rtdbWriteErrors}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "Трекинг",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "Перезапуски трекинга: ${state.telemetry.trackingRestarts}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    state.telemetry.lastTrackingRestartReason?.let { reason ->
-                        Text(
-                            "Причина последнего перезапуска: $reason",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            SettingsControlsLayoutCard(
+                state = state,
+                onControlLayoutEdit = onControlLayoutEdit,
+                onResetControlPositions = onResetControlPositions,
+                onApplyRightHandLayout = onApplyRightHandLayout,
+                onApplyLeftHandLayout = onApplyLeftHandLayout,
+            )
+
+            SettingsScreenAndThemeCard(
+                state = state,
+                onAutoBrightnessEnabled = onAutoBrightnessEnabled,
+                onScreenBrightness = onScreenBrightness,
+                onThemeMode = onThemeMode,
+            )
+
+            SettingsDiagnosticsCard(state)
 
             Text(
-                "Подсказка: частота = как часто телефон отправляет точку. Дистанция = отправка при заметном смещении.",
+                stringResource(R.string.settings_hint_policy),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-    }
-}
-
-
-@Composable
-private fun BinaryChoiceButtons(
-    modifier: Modifier = Modifier,
-    leftText: String,
-    rightText: String,
-    leftSelected: Boolean,
-    onLeftClick: () -> Unit,
-    onRightClick: () -> Unit,
-) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        val w = Modifier.weight(1f)
-        if (leftSelected) {
-            Button(onClick = onLeftClick, modifier = w) { Text(leftText) }
-            OutlinedButton(onClick = onRightClick, modifier = w) { Text(rightText) }
-        } else {
-            OutlinedButton(onClick = onLeftClick, modifier = w) { Text(leftText) }
-            Button(onClick = onRightClick, modifier = w) { Text(rightText) }
-        }
-    }
-}
-
-@Composable
-private fun PolicyCard(
-    title: String,
-    subtitle: String,
-    intervalSec: Int,
-    distanceM: Int,
-    intervalRange: IntRange,
-    distanceRange: IntRange,
-    onChange: (intervalSec: Int, distanceM: Int) -> Unit,
-) {
-    val intervalState = remember(intervalSec) { mutableIntStateOf(intervalSec) }
-    val distanceState = remember(distanceM) { mutableIntStateOf(distanceM) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(Spacing.lg),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            Text(title, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-            Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-
-            Text("Частота: каждые ${intervalState.intValue} сек", fontWeight = FontWeight.SemiBold)
-            Slider(
-                value = intervalState.intValue.toFloat(),
-                onValueChange = {
-                    intervalState.intValue = it.toInt().coerceIn(intervalRange.first, intervalRange.last)
-                },
-                onValueChangeFinished = {
-                    onChange(intervalState.intValue, distanceState.intValue)
-                },
-                valueRange = intervalRange.first.toFloat()..intervalRange.last.toFloat(),
-                steps = (intervalRange.last - intervalRange.first - 1).coerceAtLeast(0)
-            )
-
-            Text("Дистанция: > ${distanceState.intValue} м", fontWeight = FontWeight.SemiBold)
-            Slider(
-                value = distanceState.intValue.toFloat(),
-                onValueChange = {
-                    distanceState.intValue = it.toInt().coerceIn(distanceRange.first, distanceRange.last)
-                },
-                onValueChangeFinished = {
-                    onChange(intervalState.intValue, distanceState.intValue)
-                },
-                valueRange = distanceRange.first.toFloat()..distanceRange.last.toFloat(),
-                steps = (distanceRange.last - distanceRange.first - 1).coerceAtLeast(0)
-            )
-
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Применяется сразу (если трекинг включён).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }

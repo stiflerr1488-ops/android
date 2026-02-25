@@ -2,6 +2,12 @@ package com.example.teamcompass.ui
 
 import android.graphics.Bitmap
 
+enum class TacticalMapVisualMode {
+    TACTICAL,
+    NIGHT,
+    THERMAL,
+}
+
 /** Prepared map data for rendering on the radar. */
 data class TacticalMapRender(
     val overlay: GroundOverlay,

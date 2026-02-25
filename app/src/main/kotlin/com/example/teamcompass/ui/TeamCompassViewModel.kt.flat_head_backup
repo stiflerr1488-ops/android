@@ -1,0 +1,1248 @@
+package com.example.teamcompass.ui
+
+import android.app.Application
+import android.annotation.SuppressLint
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.location.Location
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.net.Uri
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.content.Intent
+import android.util.Log
+import android.view.Surface
+import android.view.WindowManager
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.teamcompass.BuildConfig
+import com.example.teamcompass.TrackingService
+import com.example.teamcompass.core.CompassCalculator
+import com.example.teamcompass.core.LocationPoint
+import com.example.teamcompass.core.PlayerMode
+import com.example.teamcompass.core.PlayerState
+import com.example.teamcompass.core.TeamCodeSecurity
+import com.example.teamcompass.core.TrackingMode
+import com.example.teamcompass.core.TrackingPolicy
+import com.example.teamcompass.core.GeoMath
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
+import com.google.firebase.database.ValueEventListener
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlin.random.Random
+
+data class MapPoint(
+    val id: String,
+    val lat: Double,
+    val lon: Double,
+    val label: String,
+    val icon: String,
+    val createdAtMs: Long,
+    val createdBy: String? = null,
+    val isTeam: Boolean,
+)
+
+data class EnemyPing(
+    val id: String,
+    val lat: Double,
+    val lon: Double,
+    val createdAtMs: Long,
+    val createdBy: String? = null,
+)
+
+enum class QuickCommandType { RALLY, RETREAT, ATTACK }
+
+data class QuickCommand(
+    val id: String,
+    val type: QuickCommandType,
+    val createdAtMs: Long,
+    val createdBy: String? = null,
+)
+
+
+
+data class TelemetryState(
+    val rtdbReadErrors: Int = 0,
+    val rtdbWriteErrors: Int = 0,
+    val trackingRestarts: Int = 0,
+    val lastLocationAtMs: Long = 0L,
+    val lastTrackingRestartReason: String? = null,
+)
+
+sealed interface UiEvent {
+    data class Error(val message: String) : UiEvent
+}
+
+data class UiState(
+    val isAuthReady: Boolean = false,
+    val uid: String? = null,
+
+    val callsign: String = "",
+    val teamCode: String? = null,
+
+    val isTracking: Boolean = false,
+    val hasLocationPermission: Boolean = false,
+
+    val me: LocationPoint? = null,
+    val myHeadingDeg: Double? = null,
+
+    val players: List<PlayerState> = emptyList(),
+
+    // Gameplay status
+    val playerMode: PlayerMode = PlayerMode.GAME,
+    val isAnchored: Boolean = false,
+    val mySosUntilMs: Long = 0L,
+
+    // Shared overlays
+    val teamPoints: List<MapPoint> = emptyList(),
+    val privatePoints: List<MapPoint> = emptyList(),
+    val enemyPings: List<EnemyPing> = emptyList(),
+    val activeCommand: QuickCommand? = null,
+
+    val enemyMarkEnabled: Boolean = false,
+
+    // Tactical KMZ/KML map overlay
+    val activeMap: TacticalMap? = null,
+    val mapEnabled: Boolean = false,
+    /** 0..1 */
+    val mapOpacity: Float = 0.65f,
+
+    // Settings (persisted)
+    val defaultMode: TrackingMode = TrackingMode.GAME,
+    val gameIntervalSec: Int = 3,
+    val gameDistanceM: Int = 10,
+    val silentIntervalSec: Int = 10,
+    val silentDistanceM: Int = 30,
+
+    // UI helper
+    val isBusy: Boolean = false,
+    val showCompassHelpOnce: Boolean = true,
+
+    val lastError: String? = null,
+    val telemetry: TelemetryState = TelemetryState(),
+)
+
+class TeamCompassViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val explicitRtdbUrl = BuildConfig.RTDB_URL.trim().takeIf { it.isNotBlank() }
+    private val googleServicesRtdbUrl = runCatching {
+        FirebaseApp.getInstance().options.databaseUrl?.trim().orEmpty()
+    }.getOrNull()?.takeIf { it.isNotBlank() }
+
+    private val auth = FirebaseAuth.getInstance()
+    private val db = if (explicitRtdbUrl != null) {
+        FirebaseDatabase.getInstance(explicitRtdbUrl).reference
+    } else if (googleServicesRtdbUrl != null) {
+        FirebaseDatabase.getInstance(googleServicesRtdbUrl).reference
+    } else {
+        FirebaseDatabase.getInstance().reference
+    }
+
+    private val prefs = UserPrefs(app)
+
+    // Used to break "infinite loading" if Firebase write task never completes (e.g. wrong RTDB URL / no network).
+    private var opNonce: Int = 0
+
+    private val _ui = MutableStateFlow(UiState())
+    val ui: StateFlow<UiState> = _ui.asStateFlow()
+
+    private val _events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 32)
+    val events: SharedFlow<UiEvent> = _events.asSharedFlow()
+
+    private var statesListener: ValueEventListener? = null
+    private var statesRef: DatabaseReference? = null
+
+    private var pointsListener: ValueEventListener? = null
+    private var pointsRef: DatabaseReference? = null
+
+    private var privatePointsListener: ValueEventListener? = null
+    private var privatePointsRef: DatabaseReference? = null
+
+    private var enemyListener: ValueEventListener? = null
+    private var enemyRef: DatabaseReference? = null
+
+    private var commandsListener: ValueEventListener? = null
+    private var commandsRef: DatabaseReference? = null
+
+    private var activeCommandExpiryJob: Job? = null
+    private var deadReminderJob: Job? = null
+    private var trackingWatchdogJob: Job? = null
+
+    private var lastSentMs: Long = 0L
+    private var lastMoveMs: Long = 0L
+    private var lastMoveLoc: Location? = null
+
+    // Enemy ping dedup for local vibration
+    private val processedEnemyPingIds = LinkedHashMap<String, Long>()
+
+    private val vibrator = app.getSystemService(Vibrator::class.java)
+    // "Strong" notification: use ALARM stream and full volume for a noticeable beep.
+    private val tone = ToneGenerator(AudioManager.STREAM_ALARM, 100)
+
+    private val fused = LocationServices.getFusedLocationProviderClient(app)
+    private var locationCallback: LocationCallback? = null
+
+    private val sensorManager = app.getSystemService(SensorManager::class.java)
+    private val windowManager = app.getSystemService(WindowManager::class.java)
+    private val rotationSensor: Sensor? = sensorManager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+    private var sensorListener: SensorEventListener? = null
+    private var _headingContinuous: Double? = null
+
+    private val calculator = CompassCalculator()
+
+    private fun emitError(message: String, cause: Throwable? = null) {
+        if (cause != null) Log.w(TAG, message, cause) else Log.w(TAG, message)
+        _ui.update { it.copy(lastError = message) }
+        _events.tryEmit(UiEvent.Error(message))
+    }
+
+    private fun noteReadError(message: String) {
+        emitError(message)
+        _ui.update { it.copy(telemetry = it.telemetry.copy(rtdbReadErrors = it.telemetry.rtdbReadErrors + 1)) }
+    }
+
+    private fun noteWriteError(message: String, cause: Throwable? = null) {
+        emitError(message, cause)
+        _ui.update { it.copy(telemetry = it.telemetry.copy(rtdbWriteErrors = it.telemetry.rtdbWriteErrors + 1)) }
+    }
+
+    private fun ensureRtdbConfiguredOrShowError(): Boolean {
+        if (explicitRtdbUrl != null || googleServicesRtdbUrl != null) return true
+        emitError("Не настроена Realtime Database URL. Добавь TEAMCOMPASS_RTDB_URL в gradle.properties или укажи firebase_url в google-services.json.")
+        return false
+    }
+
+    init {
+        viewModelScope.launch {
+            val callsign = prefs.callsignFlow.first()
+            val team = prefs.teamCodeFlow.first()
+            val defMode = prefs.defaultModeFlow.first()
+            val gameInt = prefs.gameIntervalSecFlow.first()
+            val gameDist = prefs.gameDistanceMFlow.first()
+            val silentInt = prefs.silentIntervalSecFlow.first()
+            val silentDist = prefs.silentDistanceMFlow.first()
+            val showHelpOnce = prefs.showCompassHelpOnceFlow.first()
+
+            _ui.update {
+                it.copy(
+                    callsign = callsign,
+                    teamCode = team,
+                    defaultMode = defMode,
+                    gameIntervalSec = gameInt,
+                    gameDistanceM = gameDist,
+                    silentIntervalSec = silentInt,
+                    silentDistanceM = silentDist,
+                    showCompassHelpOnce = showHelpOnce,
+                )
+            }
+
+            // If we had a team saved, start listening right away after auth
+            // (auth may not be ready yet; ensureAuth will resume)
+        }
+        ensureAuth()
+    }
+
+    fun ensureAuth() {
+        val current = auth.currentUser
+        if (current != null) {
+            _ui.update { it.copy(isAuthReady = true, uid = current.uid) }
+            // resume listening if team saved
+            _ui.value.teamCode?.let { startListening(it) }
+            return
+        }
+        auth.signInAnonymously()
+            .addOnSuccessListener { res ->
+                _ui.update { it.copy(isAuthReady = true, uid = res.user?.uid) }
+                _ui.value.teamCode?.let { startListening(it) }
+            }
+            .addOnFailureListener { e ->
+                _ui.update { it.copy(isAuthReady = false) }
+                emitError("Auth error: ${e.message}")
+            }
+    }
+
+    fun setCallsign(value: String) {
+        val v = value.take(24)
+        _ui.update { it.copy(callsign = v) }
+        viewModelScope.launch { prefs.setCallsign(v) }
+    }
+
+    fun setDefaultMode(mode: TrackingMode) {
+        val wasTracking = _ui.value.isTracking
+        _ui.update { it.copy(defaultMode = mode) }
+        viewModelScope.launch { prefs.setDefaultMode(mode) }
+        if (wasTracking) {
+            // restart immediately with new profile
+            restartTracking()
+        }
+    }
+
+    fun setGamePolicy(intervalSec: Int, distanceM: Int) {
+        val i = intervalSec.coerceIn(1, 20)
+        val d = distanceM.coerceIn(1, 100)
+        _ui.update { it.copy(gameIntervalSec = i, gameDistanceM = d) }
+        viewModelScope.launch { prefs.setGamePolicy(i, d) }
+        // apply immediately if tracking in that mode
+        if (_ui.value.isTracking && _ui.value.defaultMode == TrackingMode.GAME) {
+            restartTracking()
+        }
+    }
+
+    fun setSilentPolicy(intervalSec: Int, distanceM: Int) {
+        val i = intervalSec.coerceIn(2, 60)
+        val d = distanceM.coerceIn(1, 200)
+        _ui.update { it.copy(silentIntervalSec = i, silentDistanceM = d) }
+        viewModelScope.launch { prefs.setSilentPolicy(i, d) }
+        if (_ui.value.isTracking && _ui.value.defaultMode == TrackingMode.SILENT) {
+            restartTracking()
+        }
+    }
+
+    fun setLocationPermission(granted: Boolean) {
+        _ui.update { it.copy(hasLocationPermission = granted) }
+        if (!granted) stopTracking()
+    }
+
+    fun togglePlayerMode() {
+        val next = if (_ui.value.playerMode == PlayerMode.GAME) PlayerMode.DEAD else PlayerMode.GAME
+        setPlayerMode(next)
+    }
+
+    fun setPlayerMode(mode: PlayerMode) {
+        _ui.update { it.copy(playerMode = mode, isAnchored = false) }
+        lastSentMs = 0L // force a fresh send on next location
+        if (mode == PlayerMode.DEAD) startDeadReminder() else stopDeadReminder()
+        // Try to push the mode immediately using the last known point if available.
+        val s = _ui.value
+        val code = s.teamCode
+        val uid = s.uid
+        val me = s.me
+        if (code != null && uid != null && me != null) {
+            sendStateNow(code, uid, s.callsign.ifBlank { "Игрок" }, me)
+        }
+    }
+
+    fun setEnemyMarkEnabled(enabled: Boolean) {
+        _ui.update { it.copy(enemyMarkEnabled = enabled) }
+    }
+
+    fun importTacticalMap(uri: Uri) {
+        _ui.update { it.copy(isBusy = true) }
+        viewModelScope.launch {
+            try {
+                val map = KmzMapImporter.import(getApplication(), uri)
+                _ui.update {
+                    it.copy(
+                        activeMap = map,
+                        mapEnabled = true,
+                        isBusy = false,
+                    )
+                }
+            } catch (e: Exception) {
+                _ui.update {
+                    it.copy(
+                        isBusy = false,
+                        lastError = e.message ?: "Не удалось загрузить KMZ",
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearTacticalMap() {
+        _ui.update { it.copy(activeMap = null, mapEnabled = false) }
+    }
+
+    fun setMapEnabled(enabled: Boolean) {
+        _ui.update { it.copy(mapEnabled = enabled) }
+    }
+
+    fun setMapOpacity(opacity: Float) {
+        _ui.update { it.copy(mapOpacity = opacity.coerceIn(0f, 1f)) }
+    }
+
+    fun toggleSos() {
+        val now = System.currentTimeMillis()
+        if (_ui.value.mySosUntilMs > now) {
+            clearSos()
+        } else {
+            triggerSos()
+        }
+    }
+
+    fun triggerSos() {
+        val until = System.currentTimeMillis() + 60_000L
+        _ui.update { it.copy(mySosUntilMs = until) }
+        lastSentMs = 0L
+        val s = _ui.value
+        val code = s.teamCode
+        val uid = s.uid
+        val me = s.me
+        if (code != null && uid != null && me != null) {
+            sendStateNow(code, uid, s.callsign.ifBlank { "Игрок" }, me)
+        }
+    }
+
+    fun clearSos() {
+        _ui.update { it.copy(mySosUntilMs = 0L) }
+        lastSentMs = 0L
+        val s = _ui.value
+        val code = s.teamCode
+        val uid = s.uid
+        val me = s.me
+        if (code != null && uid != null && me != null) {
+            sendStateNow(code, uid, s.callsign.ifBlank { "Игрок" }, me)
+        }
+    }
+
+    fun addPointHere(label: String, icon: String, forTeam: Boolean) {
+        val s = _ui.value
+        val code = s.teamCode ?: return
+        val uid = s.uid ?: return
+        val me = s.me ?: return
+        addPointAt(me.lat, me.lon, label, icon, forTeam)
+    }
+
+    fun addPointAt(lat: Double, lon: Double, label: String, icon: String, forTeam: Boolean) {
+        val s = _ui.value
+        val code = s.teamCode ?: return
+        val uid = s.uid ?: return
+        val ref = if (forTeam) {
+            db.child("teams").child(code).child("points").push()
+        } else {
+            db.child("teams").child(code).child("privatePoints").child(uid).push()
+        }
+        val payload = mapOf(
+            "lat" to lat,
+            "lon" to lon,
+            "label" to label,
+            "icon" to icon,
+            "createdAtMs" to ServerValue.TIMESTAMP,
+            "createdBy" to uid,
+        )
+        ref.setValue(payload)
+    }
+
+    fun updatePoint(id: String, lat: Double, lon: Double, label: String, icon: String, isTeam: Boolean) {
+        val s = _ui.value
+        val code = s.teamCode ?: return
+        val uid = s.uid ?: return
+
+        // Permission model:
+        // - Team points: only the author (createdBy) can edit/delete the shared point.
+        // - Private points: everyone can edit their own local points.
+        if (isTeam) {
+            val mp = s.teamPoints.firstOrNull { it.id == id }
+            val author = mp?.createdBy
+            if (author != null && author != uid) {
+                _ui.update { it.copy(lastError = "Только автор может редактировать командную точку") }
+                return
+            }
+        }
+        val ref = if (isTeam) {
+            db.child("teams").child(code).child("points").child(id)
+        } else {
+            db.child("teams").child(code).child("privatePoints").child(uid).child(id)
+        }
+        val payload = mapOf(
+            "lat" to lat,
+            "lon" to lon,
+            "label" to label,
+            "icon" to icon,
+            // keep original createdAtMs/createdBy if present; don't overwrite.
+        )
+        ref.updateChildren(payload)
+    }
+
+    fun deletePoint(id: String, isTeam: Boolean) {
+        val s = _ui.value
+        val code = s.teamCode ?: return
+        val uid = s.uid ?: return
+
+        if (isTeam) {
+            val mp = s.teamPoints.firstOrNull { it.id == id }
+            val author = mp?.createdBy
+            if (author != null && author != uid) {
+                _ui.update { it.copy(lastError = "Только автор может удалить командную точку") }
+                return
+            }
+        }
+        val ref = if (isTeam) {
+            db.child("teams").child(code).child("points").child(id)
+        } else {
+            db.child("teams").child(code).child("privatePoints").child(uid).child(id)
+        }
+        ref.removeValue()
+    }
+
+    fun sendQuickCommand(type: QuickCommandType) {
+        val s = _ui.value
+        val code = s.teamCode ?: return
+        val uid = s.uid ?: return
+        val payload = mapOf(
+            "type" to type.name,
+            "createdAtMs" to ServerValue.TIMESTAMP,
+            "createdBy" to uid,
+        )
+        db.child("teams").child(code).child("commands").push().setValue(payload)
+    }
+
+    fun addEnemyPing(lat: Double, lon: Double) {
+        val s = _ui.value
+        val code = s.teamCode ?: return
+        val uid = s.uid ?: return
+        val payload = mapOf(
+            "lat" to lat,
+            "lon" to lon,
+            "createdAtMs" to ServerValue.TIMESTAMP,
+            "createdBy" to uid,
+        )
+        db.child("teams").child(code).child("enemyPings").push().setValue(payload)
+    }
+
+    fun createTeam() {
+        if (!ensureRtdbConfiguredOrShowError()) return
+        if (_ui.value.isBusy) return
+        val uid = _ui.value.uid
+        if (uid == null) {
+            emitError("Авторизация ещё не готова. Подожди секунду и попробуй снова.")
+            ensureAuth()
+            return
+        }
+
+        val nick = _ui.value.callsign.ifBlank { "Игрок" }
+        val code = generateCode()
+        val base = db.child("teams").child(code)
+        val joinSalt = TeamCodeSecurity.generateSaltHex()
+        val joinHash = TeamCodeSecurity.hashJoinCode(code, joinSalt)
+        val now = System.currentTimeMillis()
+
+        val myNonce = ++opNonce
+        _ui.update { it.copy(isBusy = true) }
+
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(12_000)
+            val s = _ui.value
+            if (s.isBusy && opNonce == myNonce && s.teamCode == null) {
+                _ui.update { it.copy(isBusy = false) }
+                emitError("Firebase не ответил (таймаут). Проверь интернет/Rules/URL базы.")
+            }
+        }
+
+        val meta = mapOf(
+            "createdAtMs" to ServerValue.TIMESTAMP,
+            "createdBy" to uid,
+            "isLocked" to false,
+            "expiresAtMs" to (now + 12 * 60 * 60_000L),
+            "joinSalt" to joinSalt,
+            "joinHash" to joinHash,
+        )
+
+        base.child("meta").setValue(meta)
+            .addOnSuccessListener {
+                val member = mapOf(
+                    "callsign" to nick,
+                    "joinedAtMs" to ServerValue.TIMESTAMP,
+                )
+                base.child("members").child(uid).setValue(member)
+                    .addOnSuccessListener {
+                        if (opNonce == myNonce) {
+                            _ui.update { it.copy(teamCode = code, isBusy = false, lastError = null) }
+                        }
+                        viewModelScope.launch { prefs.setTeamCode(code) }
+                        startListening(code)
+                    }
+                    .addOnFailureListener { e ->
+                        if (opNonce == myNonce) {
+                            _ui.update { it.copy(isBusy = false, lastError = "Не удалось добавить участника: ${e.message}") }
+                        }
+                    }
+            }
+            .addOnFailureListener { e ->
+                if (opNonce == myNonce) {
+                    _ui.update { it.copy(isBusy = false, lastError = "Не удалось создать: ${e.message}") }
+                }
+            }
+    }
+
+    fun joinTeam(codeRaw: String, alsoCreateMember: Boolean = true) {
+        if (!ensureRtdbConfiguredOrShowError()) return
+        if (_ui.value.isBusy) return
+        val uid = _ui.value.uid
+        if (uid == null) {
+            emitError("Авторизация ещё не готова. Подожди секунду и попробуй снова.")
+            ensureAuth()
+            return
+        }
+        val nick = _ui.value.callsign.ifBlank { "Игрок" }
+        val code = codeRaw.filter { it.isDigit() }.padStart(6, '0').takeLast(6)
+        val base = db.child("teams").child(code)
+
+        val myNonce = ++opNonce
+        _ui.update { it.copy(isBusy = true) }
+
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(12_000)
+            val s = _ui.value
+            if (s.isBusy && opNonce == myNonce && s.teamCode == null) {
+                _ui.update { it.copy(isBusy = false) }
+                emitError("Firebase не ответил (таймаут). Проверь интернет/Rules/URL базы.")
+            }
+        }
+
+        base.child("meta").get()
+            .addOnSuccessListener { snap ->
+                if (!snap.exists()) {
+                    if (opNonce == myNonce) {
+                        _ui.update { it.copy(isBusy = false, lastError = "Код не найден") }
+                    }
+                    return@addOnSuccessListener
+                }
+
+                val isLocked = snap.child("isLocked").getValue(Boolean::class.java) ?: false
+                if (isLocked) {
+                    if (opNonce == myNonce) {
+                        _ui.update { it.copy(isBusy = false, lastError = "Матч закрыт для новых входов") }
+                    }
+                    return@addOnSuccessListener
+                }
+
+                val expiresAt = snap.child("expiresAtMs").getValue(Long::class.java) ?: Long.MAX_VALUE
+                if (System.currentTimeMillis() > expiresAt) {
+                    if (opNonce == myNonce) {
+                        _ui.update { it.copy(isBusy = false, lastError = "Матч истёк") }
+                    }
+                    return@addOnSuccessListener
+                }
+
+                val joinSalt = snap.child("joinSalt").getValue(String::class.java)
+                val joinHash = snap.child("joinHash").getValue(String::class.java)
+                if (!joinSalt.isNullOrBlank() && !joinHash.isNullOrBlank()) {
+                    if (!TeamCodeSecurity.verifyJoinCode(code, joinSalt, joinHash)) {
+                        if (opNonce == myNonce) {
+                            _ui.update { it.copy(isBusy = false, lastError = "Код не прошёл проверку") }
+                        }
+                        return@addOnSuccessListener
+                    }
+                }
+
+                val proceed: () -> Unit = {
+                    if (opNonce == myNonce) {
+                        _ui.update { it.copy(teamCode = code, isBusy = false, lastError = null) }
+                    }
+                    viewModelScope.launch { prefs.setTeamCode(code) }
+                    startListening(code)
+                }
+
+                if (!alsoCreateMember) {
+                    proceed()
+                    return@addOnSuccessListener
+                }
+
+                val member = mapOf(
+                    "callsign" to nick,
+                    "joinedAtMs" to ServerValue.TIMESTAMP,
+                )
+                base.child("members").child(uid).setValue(member)
+                    .addOnSuccessListener { proceed() }
+                    .addOnFailureListener { e ->
+                        if (opNonce == myNonce) {
+                            _ui.update { it.copy(isBusy = false, lastError = "Не удалось войти: ${e.message}") }
+                        }
+                    }
+            }
+            .addOnFailureListener { e ->
+                if (opNonce == myNonce) {
+                    _ui.update { it.copy(isBusy = false, lastError = "Ошибка сети: ${e.message}") }
+                }
+            }
+    }
+
+
+    fun markCompassHelpSeen() {
+        _ui.update { it.copy(showCompassHelpOnce = false) }
+        viewModelScope.launch { prefs.setShowCompassHelpOnce(false) }
+    }
+
+    fun leaveTeam() {
+        stopTracking()
+        stopListening()
+        _ui.update { it.copy(teamCode = null, players = emptyList()) }
+        viewModelScope.launch { prefs.setTeamCode(null) }
+    }
+
+    private fun startListening(code: String) {
+        if (!_ui.value.isAuthReady) return
+        stopListening()
+        val uid = _ui.value.uid ?: return
+
+        val ref = db.child("teams").child(code).child("state")
+        statesRef = ref
+
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = mutableListOf<PlayerState>()
+                for (child in snapshot.children) {
+                    val id = child.key ?: continue
+                    if (id == uid) continue
+                    val callsign = child.child("callsign").getValue(String::class.java) ?: "?"
+                    val lat = child.child("lat").getValue(Double::class.java) ?: continue
+                    val lon = child.child("lon").getValue(Double::class.java) ?: continue
+                    val acc = child.child("acc").getValue(Double::class.java) ?: 999.0
+                    val speed = child.child("speed").getValue(Double::class.java) ?: 0.0
+                    val heading = child.child("heading").getValue(Double::class.java)
+                    val ts = child.child("ts").getValue(Long::class.java) ?: 0L
+                    val modeStr = child.child("mode").getValue(String::class.java) ?: "GAME"
+                    val mode = if (modeStr.equals("DEAD", ignoreCase = true)) PlayerMode.DEAD else PlayerMode.GAME
+                    val anchored = child.child("anchored").getValue(Boolean::class.java) ?: false
+                    val sosUntil = child.child("sosUntilMs").getValue(Long::class.java) ?: 0L
+                    list.add(
+                        PlayerState(
+                            uid = id,
+                            nick = callsign,
+                            point = LocationPoint(lat, lon, acc, speed, heading, ts),
+                            mode = mode,
+                            anchored = anchored,
+                            sosUntilMs = sosUntil,
+                        )
+                    )
+                }
+                _ui.update { it.copy(players = list, lastError = null) }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                noteReadError("DB: ${error.message}")
+            }
+        }
+
+        ref.addValueEventListener(listener)
+        statesListener = listener
+
+        // Team points
+        run {
+            val pRef = db.child("teams").child(code).child("points")
+            pointsRef = pRef
+            val l = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    val pts = snapshot.children.mapNotNull { c ->
+                        val id = c.key ?: return@mapNotNull null
+                        val lat = c.child("lat").getValue(Double::class.java) ?: return@mapNotNull null
+                        val lon = c.child("lon").getValue(Double::class.java) ?: return@mapNotNull null
+                        val label = c.child("label").getValue(String::class.java) ?: ""
+                        val icon = c.child("icon").getValue(String::class.java) ?: TacticalIconId.FLAG.raw
+                        val createdAt = c.child("createdAtMs").getValue(Long::class.java) ?: 0L
+                        val createdBy = c.child("createdBy").getValue(String::class.java)
+                        MapPoint(id, lat, lon, label, icon, createdAt, createdBy, isTeam = true)
+                    }
+                    _ui.update { it.copy(teamPoints = pts) }
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    noteReadError("DB(points): ${error.message}")
+                }
+            }
+            pointsListener = l
+            pRef.addValueEventListener(l)
+        }
+
+        // Private points
+        run {
+            val pRef = db.child("teams").child(code).child("privatePoints").child(uid)
+            privatePointsRef = pRef
+            val l = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    val pts = snapshot.children.mapNotNull { c ->
+                        val id = c.key ?: return@mapNotNull null
+                        val lat = c.child("lat").getValue(Double::class.java) ?: return@mapNotNull null
+                        val lon = c.child("lon").getValue(Double::class.java) ?: return@mapNotNull null
+                        val label = c.child("label").getValue(String::class.java) ?: ""
+                        val icon = c.child("icon").getValue(String::class.java) ?: TacticalIconId.STAR.raw
+                        val createdAt = c.child("createdAtMs").getValue(Long::class.java) ?: 0L
+                        val createdBy = c.child("createdBy").getValue(String::class.java)
+                        MapPoint(id, lat, lon, label, icon, createdAt, createdBy, isTeam = false)
+                    }
+                    _ui.update { it.copy(privatePoints = pts) }
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    noteReadError("DB(private): ${error.message}")
+                }
+            }
+            privatePointsListener = l
+            pRef.addValueEventListener(l)
+        }
+
+        // Enemy pings
+        run {
+            val eRef = db.child("teams").child(code).child("enemyPings")
+            enemyRef = eRef
+            val l = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    val pings = snapshot.children.mapNotNull { c ->
+                        val id = c.key ?: return@mapNotNull null
+                        val lat = c.child("lat").getValue(Double::class.java) ?: return@mapNotNull null
+                        val lon = c.child("lon").getValue(Double::class.java) ?: return@mapNotNull null
+                        val createdAt = c.child("createdAtMs").getValue(Long::class.java) ?: 0L
+                        val createdBy = c.child("createdBy").getValue(String::class.java)
+                        EnemyPing(id, lat, lon, createdAt, createdBy)
+                    }
+                    _ui.update { it.copy(enemyPings = pings) }
+
+                    // Local vibration if I'm within 30m of a NEW ping.
+                    val me = _ui.value.me
+                    if (me != null) {
+                        val now = System.currentTimeMillis()
+                        // prune old processed ids
+                        val it = processedEnemyPingIds.entries.iterator()
+                        while (it.hasNext()) {
+                            val en = it.next()
+                            if (now - en.value > 2 * 60_000L) it.remove()
+                        }
+                        for (p in pings) {
+                            if (now - p.createdAtMs > 60_000L) continue
+                            if (processedEnemyPingIds.containsKey(p.id)) continue
+                            val dist = GeoMath.distanceMeters(me, LocationPoint(p.lat, p.lon, 0.0, 0.0, null, p.createdAtMs))
+                            if (dist <= 30.0) {
+                                vibrateAndBeep(strong = true)
+                            }
+                            processedEnemyPingIds[p.id] = now
+                        }
+                    }
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    noteReadError("DB(enemy): ${error.message}")
+                }
+            }
+            enemyListener = l
+            eRef.addValueEventListener(l)
+        }
+
+        // Commands
+        run {
+            val cRef = db.child("teams").child(code).child("commands")
+            commandsRef = cRef
+            val l = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    var best: QuickCommand? = null
+                    for (c in snapshot.children) {
+                        val id = c.key ?: continue
+                        val typeStr = c.child("type").getValue(String::class.java) ?: continue
+                        val createdAt = c.child("createdAtMs").getValue(Long::class.java) ?: 0L
+                        val createdBy = c.child("createdBy").getValue(String::class.java)
+                        val type = when (typeStr.uppercase()) {
+                            "RALLY" -> QuickCommandType.RALLY
+                            "RETREAT" -> QuickCommandType.RETREAT
+                            "ATTACK" -> QuickCommandType.ATTACK
+                            else -> continue
+                        }
+                        val cmd = QuickCommand(id, type, createdAt, createdBy)
+                        if (best == null || cmd.createdAtMs > (best?.createdAtMs ?: Long.MIN_VALUE)) best = cmd
+                    }
+
+                    _ui.update { it.copy(activeCommand = best) }
+                    best?.let { scheduleCommandExpiry(it) }
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    noteReadError("DB(commands): ${error.message}")
+                }
+            }
+            commandsListener = l
+            cRef.addValueEventListener(l)
+        }
+
+        // If we already have permission, we can start tracking automatically
+        if (_ui.value.hasLocationPermission) startTracking(_ui.value.defaultMode, persistMode = false)
+    }
+
+    private fun stopListening() {
+        statesListener?.let { l -> statesRef?.removeEventListener(l) }
+        statesListener = null
+        statesRef = null
+
+        pointsListener?.let { l -> pointsRef?.removeEventListener(l) }
+        pointsListener = null
+        pointsRef = null
+
+        privatePointsListener?.let { l -> privatePointsRef?.removeEventListener(l) }
+        privatePointsListener = null
+        privatePointsRef = null
+
+        enemyListener?.let { l -> enemyRef?.removeEventListener(l) }
+        enemyListener = null
+        enemyRef = null
+
+        commandsListener?.let { l -> commandsRef?.removeEventListener(l) }
+        commandsListener = null
+        commandsRef = null
+
+        activeCommandExpiryJob?.cancel()
+        activeCommandExpiryJob = null
+    }
+
+    private fun vibrateAndBeep(strong: Boolean) {
+        // Strong = clearly noticeable in noisy outdoor conditions.
+        try {
+            if (strong) {
+                // 3 pulses
+                val timings = longArrayOf(0, 90, 60, 120, 60, 220)
+                vibrator?.vibrate(VibrationEffect.createWaveform(timings, -1))
+            } else {
+                vibrator?.vibrate(VibrationEffect.createOneShot(200L, VibrationEffect.DEFAULT_AMPLITUDE))
+            }
+        } catch (_: Throwable) {
+        }
+        try {
+            // Use a harsher tone for strong alerts.
+            val toneType = if (strong) ToneGenerator.TONE_SUP_ERROR else ToneGenerator.TONE_PROP_BEEP
+            val dur = if (strong) 450 else 160
+            tone.startTone(toneType, dur)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun startDeadReminder() {
+        if (deadReminderJob != null) return
+        deadReminderJob = viewModelScope.launch {
+            while (true) {
+                delay(10 * 60_000L)
+                // Remind as long as the user is in DEAD mode (even if tracking was stopped by accident).
+                if (_ui.value.playerMode != PlayerMode.DEAD) continue
+                vibrateAndBeep(strong = true)
+            }
+        }
+    }
+
+    private fun stopDeadReminder() {
+        deadReminderJob?.cancel()
+        deadReminderJob = null
+    }
+
+    private fun scheduleCommandExpiry(cmd: QuickCommand) {
+        activeCommandExpiryJob?.cancel()
+        activeCommandExpiryJob = viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val wait = (cmd.createdAtMs + 60_000L - now).coerceAtLeast(0L)
+            delay(wait)
+            // Only clear if it is still the same command
+            if (_ui.value.activeCommand?.id == cmd.id) {
+                _ui.update { it.copy(activeCommand = null) }
+            }
+        }
+    }
+
+    private fun sendStateNow(code: String, uid: String, nick: String, point: LocationPoint) {
+        val s = _ui.value
+        val payload = mapOf(
+            "callsign" to nick,
+            "lat" to point.lat,
+            "lon" to point.lon,
+            "acc" to point.accMeters,
+            "speed" to point.speedMps,
+            "heading" to (s.myHeadingDeg ?: point.headingDeg),
+            "ts" to point.timestampMs,
+            "mode" to s.playerMode.name,
+            "anchored" to s.isAnchored,
+            "sosUntilMs" to s.mySosUntilMs,
+        )
+        db.child("teams").child(code).child("state").child(uid).setValue(payload)
+            .addOnFailureListener { e ->
+                noteWriteError("Не удалось отправить координаты", e)
+            }
+    }
+
+    /**
+     * Location updates are requested frequently; sending to RTDB is rate-limited by [playerMode]/anchor logic.
+     */
+    fun startTracking(mode: TrackingMode, persistMode: Boolean = true) {
+        if (!_ui.value.hasLocationPermission) {
+            emitError("Нужен доступ к геолокации")
+            return
+        }
+        val code = _ui.value.teamCode ?: return
+        val uid = _ui.value.uid ?: return
+        val nick = _ui.value.callsign.ifBlank { "Игрок" }
+
+        if (persistMode) {
+            // remember last profile used (so next time it's the default)
+            _ui.update { it.copy(defaultMode = mode) }
+            viewModelScope.launch { prefs.setDefaultMode(mode) }
+        }
+
+        startHeading()
+        val policy = TrackingPolicy(
+            minIntervalMs = when (mode) {
+                TrackingMode.GAME -> _ui.value.gameIntervalSec * 1000L
+                TrackingMode.SILENT -> _ui.value.silentIntervalSec * 1000L
+            },
+            minDistanceMeters = when (mode) {
+                TrackingMode.GAME -> _ui.value.gameDistanceM.toDouble()
+                TrackingMode.SILENT -> _ui.value.silentDistanceM.toDouble()
+            }
+        )
+
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, (policy.minIntervalMs / 2).coerceAtLeast(2_000L))
+            .setMinUpdateDistanceMeters(0f)
+            .build()
+
+        @SuppressLint("MissingPermission")
+        fun doRequest() {
+            val cb = object : LocationCallback() {
+                override fun onLocationResult(result: LocationResult) {
+                    val loc = result.lastLocation ?: return
+                    onLocation(loc, code, uid, nick, policy)
+                }
+            }
+            locationCallback = cb
+            fused.requestLocationUpdates(request, cb, null)
+                .addOnFailureListener { e ->
+                    noteWriteError("Не удалось запустить трекинг", e)
+                }
+            lastSentMs = 0L
+            lastMoveMs = 0L
+            lastMoveLoc = null
+            _ui.update {
+                it.copy(
+                    isTracking = true,
+                    telemetry = it.telemetry.copy(lastLocationAtMs = System.currentTimeMillis()),
+                )
+            }
+            ContextCompat.startForegroundService(
+                getApplication(),
+                Intent(getApplication(), TrackingService::class.java),
+            )
+            if (_ui.value.playerMode == PlayerMode.DEAD) startDeadReminder()
+            startTrackingWatchdog()
+        }
+
+        // warm up (fast last known)
+        @SuppressLint("MissingPermission")
+        fused.lastLocation.addOnSuccessListener { loc ->
+            if (loc != null) onLocation(loc, code, uid, nick, policy)
+            doRequest()
+        }.addOnFailureListener {
+            doRequest()
+        }
+    }
+
+    private fun restartTracking() {
+        if (!_ui.value.isTracking) return
+        val mode = _ui.value.defaultMode
+        stopTracking()
+        startTracking(mode, persistMode = false)
+    }
+
+    private fun onLocation(loc: Location, code: String, uid: String, nick: String, policy: TrackingPolicy) {
+        val prevAnchored = _ui.value.isAnchored
+        val now = System.currentTimeMillis()
+        val heading = _ui.value.myHeadingDeg
+        val point = LocationPoint(
+            lat = loc.latitude,
+            lon = loc.longitude,
+            accMeters = loc.accuracy.toDouble(),
+            speedMps = loc.speed.toDouble(),
+            headingDeg = heading,
+            timestampMs = now,
+        )
+        // Movement / anchor detection
+        val moveDistanceM = lastMoveLoc?.distanceTo(loc)?.toDouble() ?: Double.MAX_VALUE
+        val moved = run {
+            if (moveDistanceM == Double.MAX_VALUE || moveDistanceM >= 5.0) {
+                lastMoveLoc = Location(loc)
+                lastMoveMs = now
+                true
+            } else {
+                false
+            }
+        }
+
+        val mode = _ui.value.playerMode
+        val anchored = (mode == PlayerMode.GAME) && (now - lastMoveMs >= 3 * 60_000L)
+        _ui.update {
+            it.copy(
+                me = point,
+                isAnchored = anchored,
+                telemetry = it.telemetry.copy(lastLocationAtMs = now),
+            )
+        }
+
+        val intervalMs = when {
+            mode == PlayerMode.DEAD -> 60_000L
+            anchored -> (policy.minIntervalMs * 3).coerceAtMost(60_000L)
+            else -> policy.minIntervalMs
+        }
+
+        val movedEnough = moveDistanceM >= policy.minDistanceMeters
+
+        // Rate-limit writes to RTDB
+        val shouldSend = (lastSentMs == 0L) || (now - lastSentMs >= intervalMs) || movedEnough
+        if (shouldSend) {
+            sendStateNow(code, uid, nick, point)
+            lastSentMs = now
+        } else {
+            // If we moved after being anchored, force a quick refresh.
+            if (moved && prevAnchored && mode == PlayerMode.GAME) {
+                lastSentMs = 0L
+            }
+        }
+    }
+
+    fun stopTracking() {
+        locationCallback?.let { fused.removeLocationUpdates(it) }
+        locationCallback = null
+        stopHeading()
+        stopDeadReminder()
+        stopTrackingWatchdog()
+        getApplication<Application>().stopService(Intent(getApplication(), TrackingService::class.java))
+        _ui.update { it.copy(isTracking = false) }
+    }
+
+    private fun startTrackingWatchdog() {
+        trackingWatchdogJob?.cancel()
+        trackingWatchdogJob = viewModelScope.launch {
+            while (true) {
+                delay(20_000L)
+                val s = _ui.value
+                if (!s.isTracking) continue
+                val staleForMs = System.currentTimeMillis() - s.telemetry.lastLocationAtMs
+                if (s.telemetry.lastLocationAtMs > 0L && staleForMs > 45_000L) {
+                    Log.w(TAG, "Tracking watchdog restart, staleForMs=$staleForMs")
+                    _ui.update {
+                        it.copy(
+                            telemetry = it.telemetry.copy(
+                                trackingRestarts = it.telemetry.trackingRestarts + 1,
+                                lastTrackingRestartReason = "No location for ${staleForMs}ms",
+                            )
+                        )
+                    }
+                    restartTracking()
+                }
+            }
+        }
+    }
+
+    private fun stopTrackingWatchdog() {
+        trackingWatchdogJob?.cancel()
+        trackingWatchdogJob = null
+    }
+
+    fun dismissError() {
+        _ui.update { it.copy(lastError = null) }
+    }
+
+    fun computeTargets(nowMs: Long): List<com.example.teamcompass.core.CompassTarget> {
+        val me = _ui.value.me ?: return emptyList()
+        val heading = _ui.value.myHeadingDeg ?: 0.0
+        return calculator.buildTargets(me, heading, _ui.value.players, nowMs)
+    }
+
+    private fun startHeading() {
+        if (rotationSensor == null || sensorManager == null) {
+            _ui.update { it.copy(myHeadingDeg = null) }
+            return
+        }
+        if (sensorListener != null) return
+
+        _headingContinuous = null
+        val listener = object : SensorEventListener {
+            private val rot = FloatArray(9)
+            private val ori = FloatArray(3)
+            private val out = FloatArray(9)
+
+            override fun onSensorChanged(event: SensorEvent) {
+                if (event.sensor.type != Sensor.TYPE_ROTATION_VECTOR) return
+                SensorManager.getRotationMatrixFromVector(rot, event.values)
+
+                // Adjust for the current display rotation.
+                // Without this, heading can be off by 90° when the phone is mounted sideways (e.g. in a chest rig).
+                val rotation = try { windowManager?.defaultDisplay?.rotation } catch (_: Throwable) { null } ?: Surface.ROTATION_0
+                when (rotation) {
+                    Surface.ROTATION_0 -> SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_X, SensorManager.AXIS_Y, out)
+                    Surface.ROTATION_90 -> SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_Y, SensorManager.AXIS_MINUS_X, out)
+                    Surface.ROTATION_180 -> SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_MINUS_X, SensorManager.AXIS_MINUS_Y, out)
+                    Surface.ROTATION_270 -> SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_MINUS_Y, SensorManager.AXIS_X, out)
+                    else -> System.arraycopy(rot, 0, out, 0, 9)
+                }
+                SensorManager.getOrientation(out, ori)
+
+                // Raw azimuth in degrees (0..360)
+                var raw = Math.toDegrees(ori[0].toDouble())
+                if (raw < 0) raw += 360.0
+
+                // Smooth heading without 360->0 jumps:
+                // keep a continuous value and move towards the nearest equivalent of raw.
+                fun norm360(x: Double): Double {
+                    var v = x % 360.0
+                    if (v < 0) v += 360.0
+                    return v
+                }
+                fun shortestDelta(fromDeg: Double, toDeg: Double): Double {
+                    var d = (toDeg - fromDeg + 540.0) % 360.0 - 180.0
+                    // keep in [-180, 180]
+                    return d
+                }
+
+                val prevCont = _headingContinuous
+                val alpha = 0.18 // responsiveness (0..1). Bigger = faster, smaller = smoother.
+                val nextCont = if (prevCont == null) {
+                    raw
+                } else {
+                    val prevNorm = norm360(prevCont)
+                    prevCont + shortestDelta(prevNorm, raw) * alpha
+                }
+                _headingContinuous = nextCont
+
+                _ui.update { it.copy(myHeadingDeg = nextCont) }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+
+        sensorListener = listener
+        sensorManager.registerListener(listener, rotationSensor, SensorManager.SENSOR_DELAY_GAME)
+    }
+
+    private fun stopHeading() {
+        sensorListener?.let { l -> sensorManager?.unregisterListener(l) }
+        sensorListener = null
+        _headingContinuous = null
+    }
+
+    override fun onCleared() {
+        try { tone.release() } catch (_: Throwable) {}
+        super.onCleared()
+    }
+
+    private fun generateCode(): String {
+        return Random.nextInt(0, 1_000_000).toString().padStart(6, '0')
+    }
+
+    companion object {
+        private const val TAG = "TeamCompassVM"
+    }
+}

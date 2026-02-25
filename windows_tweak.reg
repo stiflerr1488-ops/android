@@ -1,0 +1,88 @@
+Windows Registry Editor Version 5.00
+
+; ============================================
+; ОПТИМИЗАЦИЯ WINDOWS ДЛЯ РАЗРАБОТКИ
+; ============================================
+; Применяет все настройки реестра для лучшей
+; производительности при компиляции кода
+; ============================================
+
+; --- Отключение телеметрии ---
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection]
+"AllowTelemetry"=dword:00000000
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\AppCompat]
+"AITEnable"=dword:00000000
+"DisableUAR"=dword:00000001
+
+; --- Delivery Optimization (P2P обновления) ---
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config]
+"DODownloadMode"=dword:00000000
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Settings]
+"DownloadMode"=dword:00000000
+
+; --- Автоматическое обслуживание ---
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\Maintenance]
+"MaintenanceDisabled"=dword:00000001
+
+; --- Отчёты об ошибках ---
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting]
+"Disabled"=dword:00000001
+
+; --- Уведомления и советы ---
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager]
+"SubscribedContent-338387Enabled"=dword:00000000
+"SubscribedContent-353694Enabled"=dword:00000000
+"SubscribedContent-353696Enabled"=dword:00000000
+"SystemPaneSuggestionsEnabled"=dword:00000000
+"SilentInstalledAppsEnabled"=dword:00000000
+"SoftLandingEnabled"=dword:00000000
+
+; --- Фоновые приложения ---
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications]
+"GlobalUserDisabled"=dword:00000001
+
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Search]
+"BackgroundAppGlobalToggle"=dword:00000000
+
+; --- Приоритет процессора (оптимизация) ---
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\PriorityControl]
+"Win32PrioritySeparation"=dword:0000001a
+
+; --- Визуальные эффекты ---
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects]
+"VisualFXSetting"=dword:00000003
+
+[HKEY_CURRENT_USER\Control Panel\Desktop]
+"FontSmoothing"="2"
+"UserPreferencesMask"=hex:90,12,03,80,10,00,00,00
+
+; --- Отключение энергосбережения для WiFi (Qualcomm Atheros) ---
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}\0004]
+"PnPCapabilities"=dword:00000018
+"smpsDynamic"="0"
+"wowEnable"="0"
+"scanTimeValid"="120"
+"RoamingAggressiveness"="1"
+
+; --- Оптимизация электропитания USB ---
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\usbflags]
+"SkipBOSDescriptorQuery"=dword:00000001
+
+; --- Отключение индексирования для диска C: ---
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem]
+"DisableCompression"=dword:00000001
+
+; --- Увеличение кэша имен файлов ---
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem]
+"NtfsDisableLastAccessUpdate"=dword:00000001
+
+; --- Оптимизация сети ---
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters]
+"TcpAckFrequency"=dword:00000001
+"TCPNoDelay"=dword:00000001
+
+; --- Отключение спящего режима для диска ---
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{4d36e967-e325-11ce-bfc1-08002be10318}\0000]
+"UserDefinedPowerSetting"=dword:00000000

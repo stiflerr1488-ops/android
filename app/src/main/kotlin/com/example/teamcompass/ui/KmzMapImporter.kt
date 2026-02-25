@@ -5,10 +5,12 @@ import android.net.Uri
 import android.util.Xml
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.xmlpull.v1.XmlPullParser
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 import java.util.zip.ZipEntry
+import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
 
 /**
@@ -22,67 +24,103 @@ object KmzMapImporter {
         val mapsRoot = File(application.filesDir, "maps").apply { mkdirs() }
         val id = UUID.randomUUID().toString()
         val mapDir = File(mapsRoot, id).apply { mkdirs() }
+        val nameGuess = uri.lastPathSegment?.take(64).orEmpty().ifBlank { "map" }
 
-        val nameGuess = uri.lastPathSegment?.take(64) ?: "map"
-
-        // Copy source
         val src = File(mapDir, "source")
-        application.contentResolver.openInputStream(uri).use { input ->
-            requireNotNull(input) { "Не удалось открыть файл" }
-            FileOutputStream(src).use { out ->
-                input.copyTo(out)
-            }
-        }
+        copySource(application, uri, src)
 
-        // Detect if it's a zip (KMZ) by signature "PK".
-        val isZip = src.inputStream().use { ins ->
-            val b0 = ins.read()
-            val b1 = ins.read()
-            b0 == 'P'.code && b1 == 'K'.code
-        }
-
-        if (isZip) {
+        val zipEntryKmls = if (isZip(src)) {
             unzipKmz(src, mapDir)
         } else {
-            // Assume plain KML
             src.copyTo(File(mapDir, "doc.kml"), overwrite = true)
+            emptyList()
         }
 
-        val kmlFile = listOf(
-            File(mapDir, "doc.kml"),
-        ).firstOrNull { it.exists() } ?: mapDir.walkTopDown().firstOrNull { it.isFile && it.extension.lowercase() == "kml" }
-        requireNotNull(kmlFile) { "В KMZ не найден .kml файл" }
+        val mainKmlRelativePath = pickMainKmlRelativePath(mapDir, zipEntryKmls)
+            ?: throw IllegalArgumentException("No KML found in archive.")
+        val mainKmlFile = File(mapDir, mainKmlRelativePath)
 
-        val parsed = parseKml(kmlFile, mapDir)
-        val mapName = parsed.first ?: nameGuess.removeSuffix(".kmz").removeSuffix(".kml")
+        val parsed = parseKml(mainKmlFile, mapDir)
+        val mapName = parsed.docName
+            ?: nameGuess.removeSuffix(".kmz").removeSuffix(".kml").ifBlank { "Map" }
 
         TacticalMap(
             id = id,
             name = mapName,
             dirPath = mapDir.absolutePath,
-            groundOverlay = parsed.second,
-            points = parsed.third,
-            lines = parsed.fourth,
-            polygons = parsed.fifth,
+            mainKmlRelativePath = mainKmlRelativePath,
+            sourceUriString = uri.toString(),
+            groundOverlay = parsed.groundOverlay,
+            points = parsed.points,
+            lines = parsed.lines,
+            polygons = parsed.polygons,
         )
     }
 
-    private fun unzipKmz(src: File, mapDir: File) {
-        ZipInputStream(src.inputStream().buffered()).use { zin ->
-            var e: ZipEntry? = zin.nextEntry
-            while (e != null) {
-                val name = e.name
-                if (!e.isDirectory) {
-                    val outFile = safeJoin(mapDir, name)
-                    outFile.parentFile?.mkdirs()
-                    FileOutputStream(outFile).use { out ->
-                        zin.copyTo(out)
-                    }
+    private fun copySource(application: Application, uri: Uri, outFile: File) {
+        try {
+            application.contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "Failed to open file." }
+                FileOutputStream(outFile).use { output ->
+                    input.copyTo(output)
                 }
-                zin.closeEntry()
-                e = zin.nextEntry
             }
+        } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Failed to open file.", e)
         }
+    }
+
+    private fun isZip(src: File): Boolean {
+        return src.inputStream().use { ins ->
+            val b0 = ins.read()
+            val b1 = ins.read()
+            b0 == 'P'.code && b1 == 'K'.code
+        }
+    }
+
+    private fun unzipKmz(src: File, mapDir: File): List<String> {
+        val kmlEntries = mutableListOf<String>()
+        try {
+            ZipInputStream(src.inputStream().buffered()).use { zin ->
+                var entry: ZipEntry? = zin.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory) {
+                        val outFile = safeJoin(mapDir, entry.name)
+                        outFile.parentFile?.mkdirs()
+                        FileOutputStream(outFile).use { out ->
+                            zin.copyTo(out)
+                        }
+                        val rel = outFile.relativeTo(mapDir).path.replace('\\', '/')
+                        if (rel.lowercase().endsWith(".kml")) {
+                            kmlEntries += rel
+                        }
+                    }
+                    zin.closeEntry()
+                    entry = zin.nextEntry
+                }
+            }
+        } catch (e: ZipException) {
+            throw IllegalArgumentException("File is corrupted or not a valid KMZ/KML.", e)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("File is corrupted or not a valid KMZ/KML.", e)
+        }
+        return kmlEntries
+    }
+
+    private fun pickMainKmlRelativePath(mapDir: File, zipOrderedKmlEntries: List<String>): String? {
+        val docKml = File(mapDir, "doc.kml")
+        if (docKml.exists()) return "doc.kml"
+
+        val firstZipKml = zipOrderedKmlEntries.firstOrNull()
+        if (!firstZipKml.isNullOrBlank()) return firstZipKml
+
+        return mapDir.walkTopDown()
+            .firstOrNull { it.isFile && it.extension.equals("kml", ignoreCase = true) }
+            ?.relativeTo(mapDir)
+            ?.path
+            ?.replace('\\', '/')
     }
 
     private fun safeJoin(root: File, entryName: String): File {
@@ -91,19 +129,16 @@ object KmzMapImporter {
         val canonRoot = root.canonicalPath
         val canonOut = out.canonicalPath
         val rootPrefix = "$canonRoot${File.separator}"
-        require(canonOut == canonRoot || canonOut.startsWith(rootPrefix)) { "Недопустимый путь в KMZ" }
+        require(canonOut == canonRoot || canonOut.startsWith(rootPrefix)) { "Invalid KMZ entry path." }
         return out
     }
 
-    /**
-     * Returns: (docName, groundOverlay, points, lines, polygons)
-     */
     private fun parseKml(kmlFile: File, mapDir: File): ParsedKml {
         var docName: String? = null
         var overlay: GroundOverlay? = null
         val points = mutableListOf<KmlPoint>()
         val lines = mutableListOf<KmlLine>()
-        val polys = mutableListOf<KmlPolygon>()
+        val polygons = mutableListOf<KmlPolygon>()
 
         val parser = Xml.newPullParser().apply {
             setFeature("http://xmlpull.org/v1/doc/features.html#process-namespaces", true)
@@ -111,38 +146,44 @@ object KmzMapImporter {
         }
 
         fun readText(): String {
-            var res = ""
-            if (parser.next() == org.xmlpull.v1.XmlPullParser.TEXT) {
-                res = parser.text ?: ""
+            var value = ""
+            if (parser.next() == XmlPullParser.TEXT) {
+                value = parser.text.orEmpty()
                 parser.nextTag()
             }
-            return res.trim()
+            return value.trim()
         }
 
         fun skipTag() {
             var depth = 1
             while (depth != 0) {
                 when (parser.next()) {
-                    org.xmlpull.v1.XmlPullParser.END_TAG -> depth--
-                    org.xmlpull.v1.XmlPullParser.START_TAG -> depth++
+                    XmlPullParser.START_TAG -> depth++
+                    XmlPullParser.END_TAG -> depth--
                 }
             }
         }
 
         fun parseCoordinates(raw: String): List<Pair<Double, Double>> {
-            // KML: "lon,lat[,alt]" separated by spaces/newlines
-            return raw
-                .trim()
+            return raw.trim()
                 .split(Regex("\\s+"))
                 .mapNotNull { token ->
                     val parts = token.split(',')
-                    if (parts.size < 2) null
-                    else {
-                        val lon = parts[0].toDoubleOrNull() ?: return@mapNotNull null
-                        val lat = parts[1].toDoubleOrNull() ?: return@mapNotNull null
-                        Pair(lat, lon)
-                    }
+                    if (parts.size < 2) return@mapNotNull null
+                    val lon = parts[0].toDoubleOrNull() ?: return@mapNotNull null
+                    val lat = parts[1].toDoubleOrNull() ?: return@mapNotNull null
+                    Pair(lat, lon)
                 }
+        }
+
+        fun parseArgbColor(raw: String): Long? {
+            val normalized = raw.trim().removePrefix("#")
+            val hex = when (normalized.length) {
+                8 -> normalized
+                6 -> "FF$normalized"
+                else -> return null
+            }
+            return hex.toLongOrNull(16)
         }
 
         fun parseGroundOverlay(): GroundOverlay {
@@ -154,20 +195,20 @@ object KmzMapImporter {
             var west = 0.0
             var rotation = 0.0
 
-            parser.require(org.xmlpull.v1.XmlPullParser.START_TAG, null, "GroundOverlay")
-            while (parser.next() != org.xmlpull.v1.XmlPullParser.END_TAG) {
-                if (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) continue
+            parser.require(XmlPullParser.START_TAG, null, "GroundOverlay")
+            while (parser.next() != XmlPullParser.END_TAG) {
+                if (parser.eventType != XmlPullParser.START_TAG) continue
                 when (parser.name) {
                     "name" -> name = readText().ifBlank { name }
                     "Icon" -> {
-                        while (parser.next() != org.xmlpull.v1.XmlPullParser.END_TAG) {
-                            if (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) continue
+                        while (parser.next() != XmlPullParser.END_TAG) {
+                            if (parser.eventType != XmlPullParser.START_TAG) continue
                             if (parser.name == "href") href = readText() else skipTag()
                         }
                     }
                     "LatLonBox" -> {
-                        while (parser.next() != org.xmlpull.v1.XmlPullParser.END_TAG) {
-                            if (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) continue
+                        while (parser.next() != XmlPullParser.END_TAG) {
+                            if (parser.eventType != XmlPullParser.START_TAG) continue
                             when (parser.name) {
                                 "north" -> north = readText().toDoubleOrNull() ?: north
                                 "south" -> south = readText().toDoubleOrNull() ?: south
@@ -182,10 +223,8 @@ object KmzMapImporter {
                 }
             }
 
-            // Normalize href if it points outside (should not after unzip, but just in case).
             val imgFile = safeJoin(mapDir, href)
             val relHref = imgFile.relativeTo(mapDir).path.replace('\\', '/')
-
             return GroundOverlay(
                 name = name,
                 imageHref = relHref,
@@ -199,36 +238,78 @@ object KmzMapImporter {
 
         fun parsePlacemark() {
             var name = ""
+            var description = ""
             var pointCoords: List<Pair<Double, Double>>? = null
             var lineCoords: List<Pair<Double, Double>>? = null
-            var polyOuter: List<Pair<Double, Double>>? = null
+            var polygonOuter: List<Pair<Double, Double>>? = null
+            var iconRaw: String? = null
+            var colorArgb: Long? = null
 
-            parser.require(org.xmlpull.v1.XmlPullParser.START_TAG, null, "Placemark")
-            while (parser.next() != org.xmlpull.v1.XmlPullParser.END_TAG) {
-                if (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) continue
+            parser.require(XmlPullParser.START_TAG, null, "Placemark")
+            while (parser.next() != XmlPullParser.END_TAG) {
+                if (parser.eventType != XmlPullParser.START_TAG) continue
                 when (parser.name) {
                     "name" -> name = readText()
+                    "description" -> description = readText()
+                    "ExtendedData" -> {
+                        while (parser.next() != XmlPullParser.END_TAG) {
+                            if (parser.eventType != XmlPullParser.START_TAG) continue
+                            if (parser.name != "Data") {
+                                skipTag()
+                                continue
+                            }
+                            val dataName = parser.getAttributeValue(null, "name").orEmpty()
+                            var dataValue: String? = null
+                            while (parser.next() != XmlPullParser.END_TAG) {
+                                if (parser.eventType != XmlPullParser.START_TAG) continue
+                                if (parser.name == "value") {
+                                    dataValue = readText()
+                                } else {
+                                    skipTag()
+                                }
+                            }
+                            when (dataName) {
+                                "teamcompass_icon" -> {
+                                    iconRaw = dataValue?.trim().orEmpty().ifBlank { null }
+                                }
+                                "teamcompass_color" -> {
+                                    colorArgb = dataValue?.let(::parseArgbColor)
+                                }
+                            }
+                        }
+                    }
                     "Point" -> {
-                        while (parser.next() != org.xmlpull.v1.XmlPullParser.END_TAG) {
-                            if (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) continue
-                            if (parser.name == "coordinates") pointCoords = parseCoordinates(readText()) else skipTag()
+                        while (parser.next() != XmlPullParser.END_TAG) {
+                            if (parser.eventType != XmlPullParser.START_TAG) continue
+                            if (parser.name == "coordinates") {
+                                pointCoords = parseCoordinates(readText())
+                            } else {
+                                skipTag()
+                            }
                         }
                     }
                     "LineString" -> {
-                        while (parser.next() != org.xmlpull.v1.XmlPullParser.END_TAG) {
-                            if (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) continue
-                            if (parser.name == "coordinates") lineCoords = parseCoordinates(readText()) else skipTag()
+                        while (parser.next() != XmlPullParser.END_TAG) {
+                            if (parser.eventType != XmlPullParser.START_TAG) continue
+                            if (parser.name == "coordinates") {
+                                lineCoords = parseCoordinates(readText())
+                            } else {
+                                skipTag()
+                            }
                         }
                     }
                     "Polygon" -> {
-                        // Only outer boundary for MVP
-                        while (parser.next() != org.xmlpull.v1.XmlPullParser.END_TAG) {
-                            if (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) continue
+                        while (parser.next() != XmlPullParser.END_TAG) {
+                            if (parser.eventType != XmlPullParser.START_TAG) continue
                             when (parser.name) {
                                 "outerBoundaryIs" -> {
-                                    while (parser.next() != org.xmlpull.v1.XmlPullParser.END_TAG) {
-                                        if (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) continue
-                                        if (parser.name == "coordinates") polyOuter = parseCoordinates(readText()) else skipTag()
+                                    while (parser.next() != XmlPullParser.END_TAG) {
+                                        if (parser.eventType != XmlPullParser.START_TAG) continue
+                                        if (parser.name == "coordinates") {
+                                            polygonOuter = parseCoordinates(readText())
+                                        } else {
+                                            skipTag()
+                                        }
                                     }
                                 }
                                 else -> skipTag()
@@ -240,54 +321,61 @@ object KmzMapImporter {
             }
 
             val id = UUID.randomUUID().toString()
-            val nm = name.ifBlank { "" }
-            val p = pointCoords?.firstOrNull()
-            if (p != null) {
-                points.add(KmlPoint(id = id, name = nm, lat = p.first, lon = p.second))
+            val firstPoint = pointCoords?.firstOrNull()
+            if (firstPoint != null) {
+                points += KmlPoint(
+                    id = id,
+                    name = name,
+                    description = description,
+                    lat = firstPoint.first,
+                    lon = firstPoint.second,
+                    iconRaw = iconRaw,
+                    colorArgb = colorArgb,
+                )
             }
-            val ln = lineCoords
-            if (!ln.isNullOrEmpty()) {
-                lines.add(KmlLine(id = id, name = nm, coords = ln))
+            if (!lineCoords.isNullOrEmpty()) {
+                lines += KmlLine(id = id, name = name, coords = lineCoords.orEmpty())
             }
-            val pg = polyOuter
-            if (!pg.isNullOrEmpty()) {
-                polys.add(KmlPolygon(id = id, name = nm, outer = pg))
+            if (!polygonOuter.isNullOrEmpty()) {
+                polygons += KmlPolygon(id = id, name = name, outer = polygonOuter.orEmpty())
             }
         }
 
-        // Main parse loop
-        while (parser.next() != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
-            if (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) continue
-            when (parser.name) {
-                "Document" -> {
-                    // read inside document for name (optional)
-                }
-                "name" -> {
-                    // Only capture first document name if not set yet.
-                    if (docName == null) {
-                        docName = readText()
-                    } else {
-                        // skip nested names
-                        readText()
+        try {
+            while (parser.next() != XmlPullParser.END_DOCUMENT) {
+                if (parser.eventType != XmlPullParser.START_TAG) continue
+                when (parser.name) {
+                    "name" -> {
+                        if (docName == null) {
+                            docName = readText()
+                        } else {
+                            readText()
+                        }
                     }
-                }
-                "GroundOverlay" -> {
-                    overlay = parseGroundOverlay()
-                }
-                "Placemark" -> {
-                    parsePlacemark()
+                    "GroundOverlay" -> overlay = parseGroundOverlay()
+                    "Placemark" -> parsePlacemark()
                 }
             }
+        } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Failed to read KML.", e)
         }
 
-        return ParsedKml(docName, overlay, points, lines, polys)
+        return ParsedKml(
+            docName = docName,
+            groundOverlay = overlay,
+            points = points,
+            lines = lines,
+            polygons = polygons,
+        )
     }
 }
 
 private data class ParsedKml(
-    val first: String?,
-    val second: GroundOverlay?,
-    val third: List<KmlPoint>,
-    val fourth: List<KmlLine>,
-    val fifth: List<KmlPolygon>,
+    val docName: String?,
+    val groundOverlay: GroundOverlay?,
+    val points: List<KmlPoint>,
+    val lines: List<KmlLine>,
+    val polygons: List<KmlPolygon>,
 )

@@ -79,6 +79,19 @@ androidTest-results/
 
 # Screenshots
 screenshots/
-""  
-"# Screenshots"  
-"_shots/" 
+_shots/
+
+# Local diagnostic artifacts
+$null
+build_log.txt
+light_compile_log.txt
+continue*_log.txt
+*_compile_log*.txt
+*_test_log.txt
+latest_compile_log.txt
+final_compile_log.txt
+post_factory_cleanup_compile_log.txt
+verify_compile_log.txt
+vm_decompose_compile_log.txt
+vm_unit_test_log.txt
+/screenshot.png

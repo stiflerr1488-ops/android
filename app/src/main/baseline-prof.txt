@@ -1,0 +1,5 @@
+HSPLcom/example/teamcompass/MainActivity;
+HSPLcom/example/teamcompass/TeamCompassApplication;
+HSPLcom/example/teamcompass/ui/TeamCompassAppKt;
+HSPLcom/example/teamcompass/ui/TeamCompassViewModel;
+HSPLcom/example/teamcompass/tracking/TrackingRuntime;

@@ -1,0 +1,16 @@
+name: my-config
+version: 1.0.0
+schema: v1
+
+models:
+  - name: Claude Sonnet
+    provider: openai
+    model: gemini-claude-sonnet-4-5-thinking
+    apiKey: sk-orbit-bc1842468dc89221ef60126bc3a63141
+    apiBase: https://api.orbit-provider.com/cliproxy-api/api/provider/agy/v1
+
+  - name: Gemini Pro
+    provider: openai
+    model: gemini-3-pro-preview
+    apiKey: sk-orbit-bc1842468dc89221ef60126bc3a63141
+    apiBase: https://api.orbit-provider.com/cliproxy-api/api/provider/agy/v1

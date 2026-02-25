@@ -6,6 +6,6 @@ object Radius {
     val sm = 10.dp
     val md = 16.dp
     val lg = 22.dp
-    val button = 12.dp
+    val button = 16.dp
     val pill = 999.dp
 }

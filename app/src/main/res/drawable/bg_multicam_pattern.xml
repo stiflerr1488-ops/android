@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Base background -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#1A1C16"/>
+        </shape>
+    </item>
+
+    <!-- Camouflage pattern - irregular shapes -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#1F252018"/>
+        </shape>
+    </item>
+
+    <!-- Organic blob shapes for camo effect -->
+    <item android:left="0dp" android:top="0dp">
+        <shape android:shape="oval">
+            <solid android:color="#145F6B4A"/>
+            <size android:width="120dp" android:height="120dp"/>
+        </shape>
+    </item>
+
+    <item android:right="20dp" android:bottom="40dp">
+        <shape android:shape="oval">
+            <solid android:color="#0F6B5342"/>
+            <size android:width="80dp" android:height="80dp"/>
+        </shape>
+    </item>
+
+    <item android:left="60dp" android:top="100dp">
+        <shape android:shape="oval">
+            <solid android:color="#1AA89F81"/>
+            <size android:width="100dp" android:height="100dp"/>
+        </shape>
+    </item>
+
+    <item android:right="100dp" android:top="20dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#117D8458"/>
+            <corners android:radius="40dp"/>
+            <size android:width="90dp" android:height="90dp"/>
+        </shape>
+    </item>
+
+    <item android:left="150dp" android:bottom="80dp">
+        <shape android:shape="oval">
+            <solid android:color="#0D5F7D8B"/>
+            <size android:width="70dp" android:height="70dp"/>
+        </shape>
+    </item>
+
+    <!-- Noise texture overlay -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#05000000"/>
+        </shape>
+    </item>
+</layer-list>

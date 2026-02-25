@@ -21,6 +21,21 @@ fun toLocalMetersEastNorth(
     return Pair(east, north)
 }
 
+/**
+ * Inverse of [toLocalMetersEastNorth] for small areas (<= a few km).
+ * Converts local east/north meters back to (lat, lon) relative to origin.
+ */
+fun localMetersToLatLon(
+    eastMeters: Double,
+    northMeters: Double,
+    originLat: Double,
+    originLon: Double,
+): Pair<Double, Double> {
+    val lat = originLat + Math.toDegrees(northMeters / EARTH_R)
+    val lon = originLon + Math.toDegrees(eastMeters / (EARTH_R * cos(Math.toRadians(originLat))))
+    return Pair(lat, lon)
+}
+
 /** Returns (lat,lon) center of a LatLonBox. */
 fun latLonBoxCenter(north: Double, south: Double, east: Double, west: Double): Pair<Double, Double> {
     return Pair((north + south) / 2.0, (east + west) / 2.0)

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Debug-only: allows local HTTP endpoints (emulators/proxies). Release manifest does not enable this. -->
+    <application
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>
