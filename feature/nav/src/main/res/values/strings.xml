@@ -1,0 +1,49 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nav_app_title">Airsoft Social</string>
+    <string name="nav_menu">Меню</string>
+    <string name="nav_search">Поиск</string>
+    <string name="nav_inbox">Входящие</string>
+    <string name="nav_drawer_callsign_fallback">Оператор</string>
+    <string name="nav_drawer_team_placeholder">Команда: не назначена</string>
+    <string name="nav_drawer_role_guest">Гость</string>
+    <string name="nav_drawer_role_registered">Боец</string>
+    <string name="nav_drawer_role_moderator">Модератор</string>
+    <string name="nav_drawer_role_admin">Администратор</string>
+    <string name="nav_drawer_section_primary">Оперативный раздел</string>
+    <string name="nav_drawer_section_tools">Инструменты</string>
+    <string name="nav_drawer_section_system">Система</string>
+    <string name="nav_drawer_section_privileged">Командный доступ</string>
+    <string name="nav_drawer_profile">Профиль</string>
+    <string name="nav_drawer_players_chats">Игроки / Чаты</string>
+    <string name="nav_drawer_teams">Команды</string>
+    <string name="nav_drawer_events_tournaments">&#1048;&#1075;&#1088;&#1099; / &#1058;&#1091;&#1088;&#1085;&#1080;&#1088;&#1099;</string>
+    <string name="nav_drawer_dashboard">Мой день</string>
+    <string name="nav_drawer_announcements">Объявления</string>
+    <string name="nav_drawer_creators">Создатели</string>
+    <string name="nav_drawer_moderation">Модерация</string>
+    <string name="nav_drawer_admin">Админка</string>
+    <string name="nav_drawer_saved_filters">Сохранённые фильтры</string>
+    <string name="nav_drawer_drafts">Черновики</string>
+    <string name="nav_drawer_games_calendar">Календарь игр</string>
+    <string name="nav_drawer_polygons">Полигоны</string>
+    <string name="nav_drawer_marketplace">Барахолка</string>
+    <string name="nav_drawer_shops">Магазины</string>
+    <string name="nav_drawer_services">Услуги</string>
+    <string name="nav_drawer_calendar_sync">Синхронизация календаря</string>
+    <string name="nav_drawer_settings">Настройки</string>
+    <string name="nav_drawer_rules">Правила и безопасность</string>
+    <string name="nav_drawer_support">Поддержка</string>
+    <string name="nav_drawer_about">О приложении</string>
+    <string name="nav_tactical_cta">В БОЙ!</string>
+    <string name="nav_tactical_cta_subtitle">Открыть TeamCompass</string>
+    <string name="nav_splash_title">Загрузка</string>
+    <string name="nav_splash_body">Временный экран запуска нового shell-приложения.</string>
+    <string name="nav_tab_chats">Чаты</string>
+    <string name="nav_tab_teams">Команды</string>
+    <string name="nav_tab_events">&#1048;&#1075;&#1088;&#1099;</string>
+    <string name="nav_tab_marketplace">Барахолка</string>
+    <string name="nav_tab_profile">Профиль</string>
+    <string name="nav_drawer_rideshare">Попутчики</string>
+</resources>
+

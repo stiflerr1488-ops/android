@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_account_access_required_title">Ограничение доступа</string>
+    <string name="settings_account_access_required_subtitle">Функция недоступна для текущего типа аккаунта. Нужна регистрация и/или роль.</string>
+    <string name="settings_account_access_commercial_title">Нужна коммерческая роль</string>
+    <string name="settings_account_access_commercial_subtitle">Эта функция доступна коммерческим аккаунтам (создание игр, магазинов, услуг).</string>
+    <string name="settings_account_access_moderator_title">Нужна роль модератора</string>
+    <string name="settings_account_access_moderator_subtitle">Эта функция доступна только модераторам.</string>
+    <string name="settings_account_access_admin_title">Нужна роль администратора</string>
+    <string name="settings_account_access_admin_subtitle">Эта функция доступна только администраторам.</string>
+</resources>

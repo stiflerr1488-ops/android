@@ -15,7 +15,6 @@ import com.airsoft.social.app.AirsoftShellLaunchControl
 import com.airsoft.social.app.AirsoftRootApp
 import com.airsoft.social.app.LegacyTacticalBridgeLauncherAdapter
 import com.airsoft.social.app.LegacyTacticalOverviewBridge
-import com.airsoft.social.core.designsystem.AirsoftTheme
 import com.example.teamcompass.BuildConfig
 import com.example.teamcompass.ui.TeamCompassApp
 import com.example.teamcompass.ui.theme.TeamCompassTheme
@@ -54,17 +53,15 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             if (useNewShell) {
-                AirsoftTheme {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .testTag(AirsoftShellLaunchControl.TAG_NEW_ROOT),
-                    ) {
-                        AirsoftRootApp(
-                            tacticalOverviewPort = legacyTacticalOverviewBridge,
-                            tacticalLegacyBridgeLauncher = LegacyTacticalBridgeLauncherAdapter(this@MainActivity),
-                        )
-                    }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag(AirsoftShellLaunchControl.TAG_NEW_ROOT),
+                ) {
+                    AirsoftRootApp(
+                        tacticalOverviewPort = legacyTacticalOverviewBridge,
+                        tacticalLegacyBridgeLauncher = LegacyTacticalBridgeLauncherAdapter(this@MainActivity),
+                    )
                 }
             } else {
                 TeamCompassTheme {

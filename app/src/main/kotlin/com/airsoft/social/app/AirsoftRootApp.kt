@@ -22,7 +22,6 @@ fun AirsoftRootApp(
         bootstrapRoute = uiState.bootstrapRoute,
         tacticalOverviewPort = tacticalOverviewPort,
         onCompleteOnboarding = viewModel::completeOnboarding,
-        onMockSignIn = viewModel::mockSignIn,
         onSignOut = viewModel::signOut,
         onOpenLegacyTactical = {
             viewModel.onOpenLegacyTacticalRequested()

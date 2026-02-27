@@ -8,6 +8,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.airsoft.social.core.model.AppSettings
+import com.airsoft.social.core.model.AppThemePreference
 import com.airsoft.social.core.model.UserSummary
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -22,6 +24,13 @@ private object PrefKeys {
     val lastUserAvatar = stringPreferencesKey("last_user_avatar")
     val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
     val useFirebaseAdapters = booleanPreferencesKey("use_firebase_adapters")
+    val coreSocialOnly = booleanPreferencesKey("core_social_only")
+    val realProfileChats = booleanPreferencesKey("real_profile_chats")
+    val realSocialAll = booleanPreferencesKey("real_social_all")
+    val themePreference = stringPreferencesKey("theme_preference")
+    val pushEnabled = booleanPreferencesKey("push_enabled")
+    val telemetryEnabled = booleanPreferencesKey("telemetry_enabled")
+    val tacticalQuickLaunchEnabled = booleanPreferencesKey("tactical_quick_launch_enabled")
 }
 
 private fun DataStore<Preferences>.safeData(): Flow<Preferences> = data.catch { err ->
@@ -87,6 +96,9 @@ class PreferencesLocalFeatureFlagsDataSource(
     override fun observeFlags(): Flow<LocalFeatureFlags> = store.safeData().map { prefs ->
         LocalFeatureFlags(
             useFirebaseAdapters = prefs[PrefKeys.useFirebaseAdapters] ?: false,
+            coreSocialOnly = prefs[PrefKeys.coreSocialOnly] ?: true,
+            realProfileChats = prefs[PrefKeys.realProfileChats] ?: true,
+            realSocialAll = prefs[PrefKeys.realSocialAll] ?: false,
         )
     }
 
@@ -94,5 +106,56 @@ class PreferencesLocalFeatureFlagsDataSource(
         store.edit { prefs ->
             prefs[PrefKeys.useFirebaseAdapters] = enabled
         }
+    }
+
+    override suspend fun setCoreSocialOnly(enabled: Boolean) {
+        store.edit { prefs ->
+            prefs[PrefKeys.coreSocialOnly] = enabled
+        }
+    }
+
+    override suspend fun setRealProfileChats(enabled: Boolean) {
+        store.edit { prefs ->
+            prefs[PrefKeys.realProfileChats] = enabled
+        }
+    }
+
+    override suspend fun setRealSocialAll(enabled: Boolean) {
+        store.edit { prefs ->
+            prefs[PrefKeys.realSocialAll] = enabled
+        }
+    }
+}
+
+class PreferencesLocalSettingsDataSource(
+    context: Context,
+) : LocalSettingsDataSource {
+    private val store = context.airsoftPrefs
+
+    override fun observeSettings(): Flow<AppSettings> = store.safeData().map { prefs ->
+        AppSettings(
+            themePreference = prefs[PrefKeys.themePreference]
+                ?.let { raw -> AppThemePreference.entries.firstOrNull { it.name == raw } }
+                ?: AppThemePreference.System,
+            pushEnabled = prefs[PrefKeys.pushEnabled] ?: true,
+            telemetryEnabled = prefs[PrefKeys.telemetryEnabled] ?: false,
+            tacticalQuickLaunchEnabled = prefs[PrefKeys.tacticalQuickLaunchEnabled] ?: true,
+        )
+    }
+
+    override suspend fun setThemePreference(value: AppThemePreference) {
+        store.edit { prefs -> prefs[PrefKeys.themePreference] = value.name }
+    }
+
+    override suspend fun setPushEnabled(enabled: Boolean) {
+        store.edit { prefs -> prefs[PrefKeys.pushEnabled] = enabled }
+    }
+
+    override suspend fun setTelemetryEnabled(enabled: Boolean) {
+        store.edit { prefs -> prefs[PrefKeys.telemetryEnabled] = enabled }
+    }
+
+    override suspend fun setTacticalQuickLaunchEnabled(enabled: Boolean) {
+        store.edit { prefs -> prefs[PrefKeys.tacticalQuickLaunchEnabled] = enabled }
     }
 }

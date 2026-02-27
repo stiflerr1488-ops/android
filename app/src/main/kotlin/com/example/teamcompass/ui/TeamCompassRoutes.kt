@@ -105,6 +105,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.airsoft.social.core.ui.ForceLandscapeOrientation
 import com.example.teamcompass.BuildConfig
 import com.example.teamcompass.R
 import com.example.teamcompass.ui.theme.Spacing
@@ -190,6 +191,7 @@ internal fun TeamCompassCompassRoute(
         // Redirect is handled by top-level TeamCompassApp navigation effect.
         LoadingScreen()
     } else {
+        ForceLandscapeOrientation()
         CompassScreen(
             state = state,
             onRequestPermission = vm::setLocationPermission,
@@ -271,6 +273,7 @@ internal fun TeamCompassFullscreenMapRoute(
         // Redirect is handled by top-level TeamCompassApp navigation effect.
         LoadingScreen()
     } else {
+        ForceLandscapeOrientation()
         FullscreenMapScreen(
             state = state,
             onBack = { nav.popBackStack() },

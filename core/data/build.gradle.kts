@@ -5,9 +5,11 @@ android {
     namespace = "com.airsoft.social.core.data"
 }
 dependencies {
-    implementation(project(":core:common"))
+    api(project(":core:common"))
     api(project(":core:model"))
     api(project(":core:auth"))
+    api(project(":core:database"))
+    api(project(":core:network"))
     implementation(project(":core:telemetry"))
     api(project(":core:datastore"))
     implementation(libs.androidx.lifecycle.runtime.ktx)

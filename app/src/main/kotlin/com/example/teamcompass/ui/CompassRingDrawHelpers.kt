@@ -122,10 +122,10 @@ internal fun DrawScope.drawCompassTicks(
         )
 
         val label = when (absDeg) {
-            0 -> "Р РЋ"
-            90 -> "Р вЂ™"
-            180 -> "Р В®"
-            270 -> "Р вЂ”"
+            0 -> "С"
+            90 -> "В"
+            180 -> "Ю"
+            270 -> "З"
             else -> absDeg.toString()
         }
         val style = if (isCardinal) {

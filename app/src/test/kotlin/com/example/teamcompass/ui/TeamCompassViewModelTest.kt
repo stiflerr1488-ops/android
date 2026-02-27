@@ -1,4 +1,4 @@
-﻿package com.example.teamcompass.ui
+package com.example.teamcompass.ui
 
 import android.Manifest
 import android.app.Application

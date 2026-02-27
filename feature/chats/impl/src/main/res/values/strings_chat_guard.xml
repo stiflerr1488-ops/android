@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_guard_email_required">Нужна регистрация по email, чтобы писать в чат.</string>
+    <string name="chat_room_guard_title">Ограничение аккаунта</string>
+    <string name="chat_room_primary_send">Отправить сообщение</string>
+    <string name="chat_room_primary_registration_required">Требуется регистрация</string>
+    <string name="chat_room_action_open_auth">Войти / зарегистрироваться</string>
+</resources>

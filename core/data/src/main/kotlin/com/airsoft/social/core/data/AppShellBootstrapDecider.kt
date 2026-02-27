@@ -14,9 +14,10 @@ class AppShellBootstrapDecider {
         onboardingState: OnboardingState,
         authState: AuthState,
     ): AppShellBootstrapTarget = when {
-        onboardingState is OnboardingState.Required -> AppShellBootstrapTarget.Onboarding
+        // Step 1 UX: onboarding is non-blocking; first screen should be auth/registration.
         authState !is AuthState.SignedIn -> AppShellBootstrapTarget.Auth
+        // Keep onboarding state in model, but don't gate entry into main flow.
+        onboardingState is OnboardingState.Required -> AppShellBootstrapTarget.Main
         else -> AppShellBootstrapTarget.Main
     }
 }
-

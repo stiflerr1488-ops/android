@@ -10,13 +10,13 @@ class AppShellBootstrapDeciderTest {
     private val decider = AppShellBootstrapDecider()
 
     @Test
-    fun `required onboarding wins over auth state`() {
+    fun `required onboarding does not block auth when signed out`() {
         val target = decider.decide(
             onboardingState = OnboardingState.Required,
-            authState = AuthState.SignedIn(UserSession("u1", "Ghost")),
+            authState = AuthState.SignedOut,
         )
 
-        assertEquals(AppShellBootstrapTarget.Onboarding, target)
+        assertEquals(AppShellBootstrapTarget.Auth, target)
     }
 
     @Test
@@ -38,5 +38,14 @@ class AppShellBootstrapDeciderTest {
 
         assertEquals(AppShellBootstrapTarget.Main, target)
     }
-}
 
+    @Test
+    fun `signed in with required onboarding still routes to main in step1 ux`() {
+        val target = decider.decide(
+            onboardingState = OnboardingState.Required,
+            authState = AuthState.SignedIn(UserSession("u1", "Ghost")),
+        )
+
+        assertEquals(AppShellBootstrapTarget.Main, target)
+    }
+}

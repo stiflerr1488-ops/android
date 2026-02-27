@@ -25,7 +25,7 @@ private class FakeSessionLocalDataSource : SessionLocalDataSource {
 
 class DefaultSessionRepositoryTest {
     @Test
-    fun `signInMock emits signed in state`() = runTest {
+    fun `signInGuest emits signed in state`() = runTest {
         val auth = InMemoryAuthGateway()
         val local = FakeSessionLocalDataSource()
         val repository = DefaultSessionRepository(
@@ -35,7 +35,7 @@ class DefaultSessionRepositoryTest {
             scope = backgroundScope,
         )
 
-        repository.signInMock("Nomad")
+        repository.signInGuest("Nomad")
         val state = repository.authState.first { it is AuthState.SignedIn }
 
         assertTrue(state is AuthState.SignedIn)

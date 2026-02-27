@@ -16,7 +16,7 @@ import com.airsoft.social.core.designsystem.AirsoftSpacing
 
 @Composable
 fun LoadingScreen(
-    title: String = "Loading...",
+    title: String = "Загрузка...",
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -24,10 +24,13 @@ fun LoadingScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        CircularProgressIndicator()
+        CircularProgressIndicator(
+            color = MaterialTheme.colorScheme.primary,
+        )
         Text(
             text = title,
             style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = AirsoftSpacing.md),
         )
     }
@@ -46,16 +49,23 @@ fun ErrorScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text = title, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
         Text(
             text = message,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = AirsoftSpacing.sm),
         )
         if (primaryActionLabel != null) {
             Button(
                 onClick = onPrimaryAction,
-                modifier = Modifier.padding(top = AirsoftSpacing.md),
+                modifier = Modifier
+                    .padding(top = AirsoftSpacing.md)
+                    .fillMaxWidth(),
             ) {
                 Text(primaryActionLabel)
             }
@@ -74,10 +84,15 @@ fun EmptyState(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text = title, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
         Text(
             text = body,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = AirsoftSpacing.sm),
         )
     }
@@ -96,16 +111,23 @@ fun ComingSoonScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text = title, style = MaterialTheme.typography.headlineMedium)
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
         Text(
             text = body,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = AirsoftSpacing.sm),
         )
         if (primaryActionLabel != null) {
             Button(
                 onClick = onPrimaryAction,
-                modifier = Modifier.padding(top = AirsoftSpacing.md),
+                modifier = Modifier
+                    .padding(top = AirsoftSpacing.md)
+                    .fillMaxWidth(),
             ) {
                 Text(primaryActionLabel)
             }
@@ -123,11 +145,16 @@ fun PlaceholderListScreen(
         modifier = modifier.fillMaxSize().padding(AirsoftSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(AirsoftSpacing.sm),
     ) {
-        Text(text = title, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
         rows.forEach { row ->
             Text(
                 text = "- $row",
                 style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(),
             )
         }

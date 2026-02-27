@@ -20,7 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,9 +37,9 @@ fun OnboardingPlaceholderScreen(
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF080B10),
-                        Color(0xFF111A2A),
-                        Color(0xFF05070A),
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        MaterialTheme.colorScheme.surface,
+                        MaterialTheme.colorScheme.background,
                     ),
                 ),
             )
@@ -53,19 +52,19 @@ fun OnboardingPlaceholderScreen(
             Text(
                 text = "AIRSOFT SOCIAL",
                 style = MaterialTheme.typography.headlineSmall,
-                color = Color(0xFFE9EEF8),
+                color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Black,
             )
             Text(
-                text = "App skeleton: key sections, navigation, and radar-mode entry.",
+                text = "Каркас приложения: основные разделы, навигация и вход в режим радара.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFFB6C3D6),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(6.dp))
-            FeatureTile(title = "Players", subtitle = "Search, cards, ratings")
-            FeatureTile(title = "Teams", subtitle = "Roster, roles, participation")
-            FeatureTile(title = "Tournaments", subtitle = "Brackets, schedule, statuses")
-            FeatureTile(title = "Radar", subtitle = "The V BOI! button opens tactical mode")
+            FeatureTile(title = "Игроки", subtitle = "Поиск, карточки, рейтинги")
+            FeatureTile(title = "Команды", subtitle = "Состав, роли, участие")
+            FeatureTile(title = "Турниры", subtitle = "Сетки, расписание, статусы")
+            FeatureTile(title = "Радар", subtitle = "Кнопка «В БОЙ!» открывает тактический режим")
             Spacer(modifier = Modifier.weight(1f))
             Button(
                 onClick = onPrimaryAction,
@@ -74,13 +73,13 @@ fun OnboardingPlaceholderScreen(
                     .height(52.dp)
                     .testTag(ONBOARDING_CONTINUE_BUTTON_TAG),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFFF7A00),
-                    contentColor = Color(0xFF111111),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
                 shape = RoundedCornerShape(10.dp),
             ) {
                 Text(
-                    text = "Continue",
+                    text = "Продолжить",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
@@ -88,7 +87,7 @@ fun OnboardingPlaceholderScreen(
             Text(
                 text = OnboardingFeatureApi.contract.title,
                 style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFF7E8A9A),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
@@ -102,7 +101,7 @@ private fun FeatureTile(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = Color(0x441A2433),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -116,19 +115,19 @@ private fun FeatureTile(
                 modifier = Modifier
                     .width(4.dp)
                     .height(36.dp)
-                    .background(Color(0xFFFF7A00), RoundedCornerShape(12.dp)),
+                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)),
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = title,
-                    color = Color(0xFFF2F6FD),
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = subtitle,
-                    color = Color(0xFF9FB0C6),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

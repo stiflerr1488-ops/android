@@ -41,12 +41,12 @@ internal fun formatRangeLabel(meters: Int): String {
     return if (meters >= 1000) {
         val km = meters / 1000.0
         if (km == km.roundToInt().toDouble()) {
-            "${km.roundToInt()}РєРј"
+            "${km.roundToInt()}км"
         } else {
-            String.format(Locale.US, "%.1fРєРј", km)
+            String.format(Locale.US, "%.1fкм", km)
         }
     } else {
-        "${meters}Рј"
+        "${meters}м"
     }
 }
 

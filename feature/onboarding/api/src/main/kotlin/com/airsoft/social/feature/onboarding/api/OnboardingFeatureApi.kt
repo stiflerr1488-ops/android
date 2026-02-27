@@ -11,9 +11,8 @@ object OnboardingFeatureApi {
     const val ROUTE: String = "onboarding"
     val contract = OnboardingRouteContract(
         route = ROUTE,
-        title = "Onboarding",
+        title = "Онбординг",
         requiresAuth = false,
         requiresOnboarding = false,
     )
 }
-

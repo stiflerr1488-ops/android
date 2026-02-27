@@ -58,9 +58,9 @@ class AirsoftShellViewModel @Inject constructor(
         }
     }
 
-    fun mockSignIn() {
+    fun signInGuest() {
         viewModelScope.launch {
-            sessionRepository.signInMock(callsign = "Operator")
+            sessionRepository.signInGuest(callsign = "Operator")
             events.value += 1
         }
     }

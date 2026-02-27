@@ -210,7 +210,7 @@ private fun LevelSection(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
                         Text(
-                            text = "$currentLevelTitle РІР‚Сћ ${levelMembers.size}",
+                            text = "$currentLevelTitle • ${levelMembers.size}",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f),
@@ -293,7 +293,7 @@ private fun MemberRow(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "$roles РІР‚Сћ $distanceLabel РІР‚Сћ $status",
+                text = "$roles • $distanceLabel • $status",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

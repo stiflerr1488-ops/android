@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Debug-only: allows local HTTP endpoints (emulators/proxies). Release manifest does not enable this. -->
     <application
         android:usesCleartextTraffic="false"
-        android:networkSecurityConfig="@xml/network_security_config" />
+        android:networkSecurityConfig="@xml/network_security_config">
+        <!-- Prevent LeakCanary from hijacking launcher opens (e.g. monkey/launcher icon) during app smoke checks. -->
+        <activity-alias
+            android:name="leakcanary.internal.activity.LeakLauncherActivity"
+            android:enabled="false"
+            tools:node="merge"
+            tools:replace="android:enabled" />
+    </application>
 </manifest>

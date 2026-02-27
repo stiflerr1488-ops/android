@@ -6,6 +6,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.airsoft.social.core.tactical.TacticalMigrationStage
 import com.airsoft.social.core.tactical.TacticalOverviewPort
 import com.airsoft.social.core.tactical.TacticalOverviewSnapshot
+import com.airsoft.social.core.ui.ForceLandscapeOrientation
 import com.airsoft.social.core.ui.WireframeChipRow
 import com.airsoft.social.core.ui.WireframeItemRow
 import com.airsoft.social.core.ui.WireframePage
@@ -13,9 +14,9 @@ import com.airsoft.social.core.ui.WireframeSection
 import com.airsoft.social.feature.tactical.api.TacticalFeatureApi
 
 data class TacticalBridgeUiState(
-    val title: String = "Radar",
-    val body: String = "Radar mode entry point. Temporary bridge to legacy tactical implementation.",
-    val primaryActionLabel: String = "V BOI!",
+    val title: String = "Радар",
+    val body: String = "Точка входа в режим радара. Временный мост к легаси-тактике.",
+    val primaryActionLabel: String = "В БОЙ!",
 )
 
 sealed interface TacticalBridgeAction {
@@ -27,6 +28,7 @@ fun TacticalBridgeRoute(
     tacticalOverviewPort: TacticalOverviewPort,
     onOpenLegacyTactical: () -> Unit = {},
 ) {
+    ForceLandscapeOrientation()
     val snapshot by tacticalOverviewPort
         .observeOverview()
         .collectAsStateWithLifecycle(initialValue = TacticalOverviewSnapshot())
@@ -54,15 +56,15 @@ fun TacticalBridgeScreen(
     ) {
         WireframeSection(
             title = TacticalFeatureApi.contract.title,
-            subtitle = "Skeleton of the new tactical feature. Real radar logic is still launched via legacy bridge.",
+            subtitle = "Каркас новой тактической фичи. Реальная логика радара пока запускается через легаси-мост.",
         ) {
             WireframeChipRow(
-                labels = listOf("Radar", "Team", "Map", "Positions", "Comms"),
+                labels = listOf("Радар", "Команда", "Карта", "Позиции", "Связь"),
             )
         }
         WireframeSection(
-            title = "Bridge State",
-            subtitle = "Data comes from TacticalOverviewPort (currently via app seam).",
+            title = "Состояние моста",
+            subtitle = "Данные приходят из порта тактики (сейчас через переходный слой в приложении).",
         ) {
             uiState.body.lines()
                 .filter { it.isNotBlank() }
@@ -71,7 +73,7 @@ fun TacticalBridgeScreen(
                     val title = parts.firstOrNull()?.trim().orEmpty()
                     val value = parts.getOrNull(1)?.trim() ?: line
                     WireframeItemRow(
-                        title = if (title.isBlank()) "Status ${index + 1}" else title,
+                        title = if (title.isBlank()) "Статус ${index + 1}" else title,
                         subtitle = value,
                     )
                 }
@@ -81,20 +83,20 @@ fun TacticalBridgeScreen(
 
 internal fun TacticalOverviewSnapshot.toBridgeUiState(): TacticalBridgeUiState {
     val stageLabel = when (migrationStage) {
-        TacticalMigrationStage.LegacyBridge -> "Legacy bridge"
-        TacticalMigrationStage.HybridBridge -> "Hybrid bridge"
-        TacticalMigrationStage.NativeFeature -> "Native feature"
+        TacticalMigrationStage.LegacyBridge -> "Легаси-мост"
+        TacticalMigrationStage.HybridBridge -> "Гибридный мост"
+        TacticalMigrationStage.NativeFeature -> "Нативная фича"
     }
-    val realtimeLabel = if (realtimeConnected) "connected" else "offline"
-    val teamLabel = activeTeamId ?: "none"
+    val realtimeLabel = if (realtimeConnected) "подключен" else "офлайн"
+    val teamLabel = activeTeamId ?: "нет"
 
     return TacticalBridgeUiState(
         body = buildString {
-            appendLine("Note: $note")
-            appendLine("Stage: $stageLabel")
-            appendLine("Backend: $backendProvider")
-            appendLine("Realtime: $realtimeLabel")
-            append("Active team: $teamLabel")
+            appendLine("Примечание: $note")
+            appendLine("Этап: $stageLabel")
+            appendLine("Бэкенд: $backendProvider")
+            appendLine("Реалтайм: $realtimeLabel")
+            append("Активная команда: $teamLabel")
         },
     )
 }

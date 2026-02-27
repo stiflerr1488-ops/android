@@ -119,7 +119,7 @@ internal fun DrawScope.drawCompassRadarOverlaysLayer(
                 )
 
                 if (o.label.isNotBlank()) {
-                    val distLabel = "${o.distanceMeters.roundToInt()}Р С"
+                    val distLabel = "${o.distanceMeters.roundToInt()}м"
                     val distM = textMeasurer.measure(distLabel, style = labelStyle)
                     drawText(
                         distM,

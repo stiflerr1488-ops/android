@@ -12,10 +12,10 @@ class TacticalBridgeUiStateTest {
     fun defaults_matchBridgeMessagingContract() {
         val state = TacticalBridgeUiState()
 
-        assertEquals("Radar", state.title)
-        assertEquals("V BOI!", state.primaryActionLabel)
+        assertEquals("Радар", state.title)
+        assertEquals("В БОЙ!", state.primaryActionLabel)
         assertEquals(
-            "Radar mode entry point. Temporary bridge to legacy tactical implementation.",
+            "Точка входа в режим радара. Временный мост к легаси-тактике.",
             state.body,
         )
     }
@@ -27,15 +27,15 @@ class TacticalBridgeUiStateTest {
             backendProvider = "custom-api+ws",
             realtimeConnected = true,
             activeTeamId = "team-red",
-            note = "Bridge is active.",
+            note = "Мост активен.",
         )
 
         val uiState = snapshot.toBridgeUiState()
 
-        assertTrue(uiState.body.contains("Note: Bridge is active."))
-        assertTrue(uiState.body.contains("Stage: Hybrid bridge"))
-        assertTrue(uiState.body.contains("Backend: custom-api+ws"))
-        assertTrue(uiState.body.contains("Realtime: connected"))
-        assertTrue(uiState.body.contains("Active team: team-red"))
+        assertTrue(uiState.body.contains("Примечание: Мост активен."))
+        assertTrue(uiState.body.contains("Этап: Гибридный мост"))
+        assertTrue(uiState.body.contains("Бэкенд: custom-api+ws"))
+        assertTrue(uiState.body.contains("Реалтайм: подключен"))
+        assertTrue(uiState.body.contains("Активная команда: team-red"))
     }
 }
