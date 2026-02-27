@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("airsoft.android.feature")
     id("airsoft.android.hilt")
 }
