@@ -166,7 +166,7 @@ internal fun observeTeamFlow(
                     ) {
                         stateCellsReadEnabled = false
                         stateCellsReadDeniedInSession = true
-                        setStateCellsReadDeniedInSession(true)
+            setStateCellsReadDeniedInSession(true)
                         if (!stateCellsFallbackApplied) {
                             stateCellsFallbackApplied = true
                             Log.w(
@@ -207,7 +207,7 @@ internal fun observeTeamFlow(
 
             stateCellsReadEnabled = false
             stateCellsReadDeniedInSession = true
-                        setStateCellsReadDeniedInSession(true)
+            setStateCellsReadDeniedInSession(true)
             if (!stateCellsFallbackApplied) {
                 stateCellsFallbackApplied = true
                 val reason = when {

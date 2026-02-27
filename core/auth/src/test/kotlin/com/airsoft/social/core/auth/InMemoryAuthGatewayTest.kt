@@ -10,8 +10,17 @@ class InMemoryAuthGatewayTest {
     @Test
     fun `signIn updates auth state to signed in`() = runTest {
         val gateway = InMemoryAuthGateway()
+        gateway.registerWithEmail(
+            email = "ghost@example.com",
+            password = "password123",
+            displayName = "Ghost",
+        )
+        gateway.signOut()
 
-        val result = gateway.signIn(SignInRequest(displayName = "Ghost"))
+        val result = gateway.signInWithEmail(
+            email = "ghost@example.com",
+            password = "password123",
+        )
 
         assertTrue(result is AuthResult.Success)
         assertTrue(gateway.authState.first() is AuthState.SignedIn)
@@ -20,7 +29,7 @@ class InMemoryAuthGatewayTest {
     @Test
     fun `signOut returns signed out state`() = runTest {
         val gateway = InMemoryAuthGateway()
-        gateway.signIn(SignInRequest(displayName = "Ghost"))
+        gateway.signInGuest(displayName = "Ghost")
 
         gateway.signOut()
 

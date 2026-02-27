@@ -22,6 +22,9 @@ private object PrefKeys {
     val lastUserAvatar = stringPreferencesKey("last_user_avatar")
     val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
     val useFirebaseAdapters = booleanPreferencesKey("use_firebase_adapters")
+    val coreSocialOnly = booleanPreferencesKey("core_social_only")
+    val realProfileChats = booleanPreferencesKey("real_profile_chats")
+    val realSocialAll = booleanPreferencesKey("real_social_all")
 }
 
 private fun DataStore<Preferences>.safeData(): Flow<Preferences> = data.catch { err ->
@@ -87,12 +90,33 @@ class PreferencesLocalFeatureFlagsDataSource(
     override fun observeFlags(): Flow<LocalFeatureFlags> = store.safeData().map { prefs ->
         LocalFeatureFlags(
             useFirebaseAdapters = prefs[PrefKeys.useFirebaseAdapters] ?: false,
+            coreSocialOnly = prefs[PrefKeys.coreSocialOnly] ?: true,
+            realProfileChats = prefs[PrefKeys.realProfileChats] ?: true,
+            realSocialAll = prefs[PrefKeys.realSocialAll] ?: false,
         )
     }
 
     override suspend fun setUseFirebaseAdapters(enabled: Boolean) {
         store.edit { prefs ->
             prefs[PrefKeys.useFirebaseAdapters] = enabled
+        }
+    }
+
+    override suspend fun setCoreSocialOnly(enabled: Boolean) {
+        store.edit { prefs ->
+            prefs[PrefKeys.coreSocialOnly] = enabled
+        }
+    }
+
+    override suspend fun setRealProfileChats(enabled: Boolean) {
+        store.edit { prefs ->
+            prefs[PrefKeys.realProfileChats] = enabled
+        }
+    }
+
+    override suspend fun setRealSocialAll(enabled: Boolean) {
+        store.edit { prefs ->
+            prefs[PrefKeys.realSocialAll] = enabled
         }
     }
 }

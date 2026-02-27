@@ -4,6 +4,9 @@ import com.airsoft.social.core.model.UserSummary
 
 data class LocalFeatureFlags(
     val useFirebaseAdapters: Boolean = false,
+    val coreSocialOnly: Boolean = true,
+    val realProfileChats: Boolean = true,
+    val realSocialAll: Boolean = false,
 )
 
 interface SessionLocalDataSource {
@@ -19,5 +22,8 @@ interface OnboardingLocalDataSource {
 interface LocalFeatureFlagsDataSource {
     fun observeFlags(): kotlinx.coroutines.flow.Flow<LocalFeatureFlags>
     suspend fun setUseFirebaseAdapters(enabled: Boolean)
+    suspend fun setCoreSocialOnly(enabled: Boolean)
+    suspend fun setRealProfileChats(enabled: Boolean)
+    suspend fun setRealSocialAll(enabled: Boolean)
 }
 

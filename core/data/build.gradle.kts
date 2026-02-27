@@ -5,7 +5,7 @@ android {
     namespace = "com.airsoft.social.core.data"
 }
 dependencies {
-    implementation(project(":core:common"))
+    api(project(":core:common"))
     api(project(":core:model"))
     api(project(":core:auth"))
     implementation(project(":core:telemetry"))
