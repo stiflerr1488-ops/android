@@ -1,4 +1,4 @@
-﻿package com.example.teamcompass.tracking
+package com.example.teamcompass.tracking
 
 import android.annotation.SuppressLint
 import android.app.Application

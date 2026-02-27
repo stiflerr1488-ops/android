@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_permissions_primary_action_request_runtime">Запросить разрешения</string>
+    <string name="settings_permissions_action_open_permissions">Открыть экран разрешений приложения</string>
+    <string name="settings_permissions_runtime_all_granted">Все ключевые разрешения уже выданы</string>
+</resources>

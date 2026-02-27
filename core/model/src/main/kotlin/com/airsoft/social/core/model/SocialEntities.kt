@@ -8,9 +8,11 @@ data class User(
     val firstName: String,
     val lastName: String,
     val avatarUrl: String? = null,
+    val bannerUrl: String? = null,
     val teamId: String? = null,
     val teamName: String? = null,
     val region: String? = null,
+    val exitRadiusKm: Int? = null,
     val bio: String? = null,
     val roles: Set<UserRole> = emptySet(),
     val privacySettings: PrivacySettings = PrivacySettings(),
@@ -76,6 +78,24 @@ data class GearCategorySummary(
     val displayName: String,
     val icon: String,
     val count: Int,
+)
+
+data class GameHistoryRow(
+    val id: String,
+    val date: Long,
+    val eventName: String,
+)
+
+data class AchievementRow(
+    val id: String,
+    val title: String,
+    val description: String,
+)
+
+data class TrustBadgeRow(
+    val id: String,
+    val title: String,
+    val description: String,
 )
 
 enum class ChatType {

@@ -1,4 +1,4 @@
-﻿package com.example.teamcompass.ui
+package com.example.teamcompass.ui
 
 import android.graphics.Bitmap
 import android.net.Uri

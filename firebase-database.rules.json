@@ -2,6 +2,131 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "users": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "updatedAtMs",
+        "callsignLower"
+      ],
+      "$uid": {
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "userGear": {
+      "$uid": {
+        ".read": "auth != null",
+        ".indexOn": [
+          "createdAt"
+        ],
+        "$gearId": {
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    },
+    "userGameHistory": {
+      "$uid": {
+        ".read": "auth != null",
+        ".indexOn": [
+          "date"
+        ],
+        "$historyId": {
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    },
+    "userAchievements": {
+      "$uid": {
+        ".read": "auth != null",
+        ".indexOn": [
+          "updatedAtMs"
+        ],
+        "$achievementId": {
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    },
+    "userTrustBadges": {
+      "$uid": {
+        ".read": "auth != null",
+        ".indexOn": [
+          "updatedAtMs"
+        ],
+        "$badgeId": {
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    },
+    "events": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "eventDate",
+        "updatedAtMs"
+      ],
+      "$eventId": {
+        ".write": "auth != null && (!data.exists() || data.child('ownerId').val() == auth.uid)"
+      }
+    },
+    "eventParticipants": {
+      "$eventId": {
+        "$uid": {
+          ".read": "auth != null",
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    },
+    "marketListings": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "updatedAtMs",
+        "sellerId",
+        "titleLower"
+      ],
+      "$listingId": {
+        ".write": "auth != null && (!data.exists() || data.child('sellerId').val() == auth.uid)"
+      }
+    },
+    "userListings": {
+      "$uid": {
+        ".read": "auth != null",
+        ".indexOn": [
+          "updatedAtMs"
+        ],
+        "$listingId": {
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    },
+    "chatThreads": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "updatedAtMs"
+      ],
+      "$threadId": {
+        ".write": "auth != null && (!data.exists() || data.child('ownerId').val() == auth.uid)"
+      }
+    },
+    "chatMessages": {
+      "$threadId": {
+        ".read": "auth != null",
+        ".indexOn": [
+          "createdAtMs"
+        ],
+        "$messageId": {
+          ".write": "auth != null && (!data.exists() || data.child('senderId').val() == auth.uid)"
+        }
+      }
+    },
+    "userThreads": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".indexOn": [
+          "updatedAtMs"
+        ],
+        "$threadId": {
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    },
     "teams": {
       "$teamCode": {
         ".write": "auth != null && !data.exists() && newData.hasChildren(['meta', 'members']) && newData.child('meta').child('createdBy').val() == auth.uid && newData.child('members').child(auth.uid).exists()",

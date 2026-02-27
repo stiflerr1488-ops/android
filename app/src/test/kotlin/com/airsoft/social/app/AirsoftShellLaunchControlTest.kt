@@ -73,16 +73,29 @@ class AirsoftShellLaunchControlTest {
     }
 
     @Test
-    fun overrides_areIgnoredWhenDebugOverridesDisabled() {
+    fun intentOverride_stillWorksWhenDebugOverridesDisabled() {
         AirsoftShellLaunchControl.setDebugProcessOverrideModeForTests(AirsoftShellLaunchControl.MODE_NEW)
         val newIntent = Intent().putExtra(
             AirsoftShellLaunchControl.EXTRA_SHELL_MODE,
             AirsoftShellLaunchControl.MODE_NEW,
         )
 
-        assertFalse(
+        assertTrue(
             AirsoftShellLaunchControl.shouldUseNewShell(
                 launchIntent = newIntent,
+                defaultEnabled = false,
+                debugOverridesEnabled = false,
+            ),
+        )
+    }
+
+    @Test
+    fun processOverride_isIgnoredWhenDebugOverridesDisabled() {
+        AirsoftShellLaunchControl.setDebugProcessOverrideModeForTests(AirsoftShellLaunchControl.MODE_NEW)
+
+        assertFalse(
+            AirsoftShellLaunchControl.shouldUseNewShell(
+                launchIntent = null,
                 defaultEnabled = false,
                 debugOverridesEnabled = false,
             ),

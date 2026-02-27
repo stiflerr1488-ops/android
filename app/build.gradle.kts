@@ -32,8 +32,11 @@ android {
         versionCode = 1
         versionName = "0.2"
         buildConfigField("String", "RTDB_URL", "\"${rtdbUrl.replace("\"", "\\\"")}\"")
-        buildConfigField("boolean", "NEW_APP_SHELL_ENABLED", "false")
-        buildConfigField("boolean", "NEW_APP_USE_FIREBASE_ADAPTERS", "false")
+        buildConfigField("boolean", "NEW_APP_SHELL_ENABLED", "true")
+        buildConfigField("boolean", "NEW_APP_USE_FIREBASE_ADAPTERS", "true")
+        buildConfigField("boolean", "CORE_SOCIAL_ONLY", "true")
+        buildConfigField("boolean", "REAL_PROFILE_CHATS", "true")
+        buildConfigField("boolean", "REAL_SOCIAL_ALL", "false")
         buildConfigField("boolean", "TACTICAL_FILTERS_V1_ENABLED", "true")
         buildConfigField("boolean", "TEAM_VIEW_MODE_V2_ENABLED", "true")
         buildConfigField("boolean", "STATE_CELLS_V1_ENABLED", "true")

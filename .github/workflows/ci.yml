@@ -108,7 +108,7 @@ jobs:
         run: ./gradlew :core:test :app:testDebugUnitTest --stacktrace --max-workers=4
 
       - name: Run new architecture unit tests
-        run: ./gradlew :core:auth:test :core:telemetry:test :core:data:test :core:tactical:test :feature:nav:testDebugUnitTest :feature:tactical:impl:testDebugUnitTest --stacktrace --max-workers=4
+        run: ./gradlew :core:auth:test :core:telemetry:test :core:data:test :core:tactical:test :feature:productivity:impl:testDebugUnitTest :feature:notifications:impl:testDebugUnitTest :feature:creators:impl:testDebugUnitTest :feature:admin:impl:testDebugUnitTest :feature:calendarsync:impl:testDebugUnitTest :feature:workflow:impl:testDebugUnitTest :feature:nav:testDebugUnitTest :feature:search:impl:testDebugUnitTest :feature:tactical:impl:testDebugUnitTest --stacktrace --max-workers=4
 
   lint:
     name: Lint Gates

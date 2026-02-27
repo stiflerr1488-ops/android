@@ -97,7 +97,7 @@
     <string name="label_alive_upper">ЖИВ</string>
     <string name="label_dead_upper">МЕРТВ</string>
     <string name="label_scan">Скан</string>
-    <string name="label_scan_scanning">РЎРєР°РЅ…</string>
+    <string name="label_scan_scanning">Скан…</string>
     <string name="battery_status_format">Батарея: %1$s</string>
     <string name="notification_channel_tracking_name">Отслеживание геопозиции</string>
     <string name="notification_tracking_active">Фоновый трекинг активен</string>
@@ -310,7 +310,7 @@
     <string name="qr_dialog_title">QR-код команды</string>
     <string name="qr_dialog_code_format">Код: %1$s</string>
     <string name="qr_dialog_manual_hint">Или введите код вручную на экране входа</string>
-    <string name="ui_loading_default">Р—Р°РіСЂСѓР·РєР°…</string>
+    <string name="ui_loading_default">Загрузка…</string>
     <string name="ui_empty_default_title">Пусто</string>
 
     <string name="error_team_code_not_found">Код команды не найден</string>

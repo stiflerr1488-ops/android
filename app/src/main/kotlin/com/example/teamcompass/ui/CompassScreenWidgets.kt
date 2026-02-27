@@ -149,7 +149,7 @@ internal fun TargetRow(t: CompassTarget) {
                 else -> ""
             }
             Text(
-                "$dist РІР‚Сћ $seen$acc$mode",
+                "$dist • $seen$acc$mode",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

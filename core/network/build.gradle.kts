@@ -5,7 +5,8 @@ android {
     namespace = "com.airsoft.social.core.network"
 }
 dependencies {
-    implementation(project(":core:common"))
+    api(project(":core:common"))
+    api(project(":core:model"))
     implementation(libs.androidx.core.ktx)
     api(libs.squareup.okhttp)
     implementation(libs.squareup.okhttp.logging)

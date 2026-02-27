@@ -23,13 +23,19 @@ object AirsoftShellLaunchControl {
         defaultEnabled: Boolean,
         debugOverridesEnabled: Boolean,
     ): Boolean {
-        if (!debugOverridesEnabled) return defaultEnabled
-
         val intentRequestedMode = launchIntent
             ?.getStringExtra(EXTRA_SHELL_MODE)
             ?.trim()
             ?.lowercase()
-        val requestedMode = intentRequestedMode ?: debugProcessOverrideMode ?: MODE_DEFAULT
+
+        when (intentRequestedMode) {
+            MODE_NEW -> return true
+            MODE_LEGACY -> return false
+        }
+
+        if (!debugOverridesEnabled) return defaultEnabled
+
+        val requestedMode = debugProcessOverrideMode ?: MODE_DEFAULT
 
         return when (requestedMode) {
             MODE_NEW -> true

@@ -7,10 +7,14 @@ import com.airsoft.social.core.auth.InMemoryAuthGateway
 import com.airsoft.social.core.data.BootstrapRepository
 import com.airsoft.social.core.data.DefaultFeatureFlagsRepository
 import com.airsoft.social.core.data.DefaultOnboardingRepository
+import com.airsoft.social.core.data.NoopProfileRemoteDataSource
 import com.airsoft.social.core.data.DefaultSessionRepository
 import com.airsoft.social.core.data.FakeBootstrapRepository
 import com.airsoft.social.core.data.FeatureFlagsRepository
 import com.airsoft.social.core.data.OnboardingRepository
+import com.airsoft.social.core.data.ProfileRemoteDataSource
+import com.airsoft.social.core.data.ProfileRepository
+import com.airsoft.social.core.data.RealtimeProfileRepository
 import com.airsoft.social.core.data.SessionRepository
 import com.airsoft.social.core.database.AirsoftDatabase
 import com.airsoft.social.core.database.AppMetaDao
@@ -37,7 +41,9 @@ import com.airsoft.social.core.tactical.TacticalOverviewPort
 import com.airsoft.social.infra.firebase.FirebaseAuthGatewayAdapter
 import com.airsoft.social.infra.firebase.FirebaseRealtimeTacticalGatewayAdapter
 import com.airsoft.social.infra.firebase.FirebaseTelemetryAdapter
+import com.airsoft.social.infra.firebase.RtdbProfileRemoteDataSource
 import com.example.teamcompass.BuildConfig
+import com.google.firebase.database.FirebaseDatabase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -102,6 +108,22 @@ object NewArchitectureModule {
 
     @Provides
     @Singleton
+    fun provideFirebaseDatabase(): FirebaseDatabase? {
+        if (!BuildConfig.NEW_APP_USE_FIREBASE_ADAPTERS) return null
+        return runCatching {
+            val configuredUrl = BuildConfig.RTDB_URL.trim()
+            val database = if (configuredUrl.isNotEmpty()) {
+                FirebaseDatabase.getInstance(configuredUrl)
+            } else {
+                FirebaseDatabase.getInstance()
+            }
+            runCatching { database.setPersistenceEnabled(true) }
+            database
+        }.getOrNull()
+    }
+
+    @Provides
+    @Singleton
     fun provideLegacyTacticalOverviewBridge(): LegacyTacticalOverviewBridge = LegacyTacticalOverviewBridge()
 
     @Provides
@@ -131,6 +153,27 @@ object NewArchitectureModule {
 
     @Provides
     fun provideAppMetaDao(database: AirsoftDatabase): AppMetaDao = database.appMetaDao()
+
+    @Provides
+    @Singleton
+    fun provideProfileRemoteDataSource(
+        firebaseDatabase: FirebaseDatabase?,
+    ): ProfileRemoteDataSource =
+        if (BuildConfig.NEW_APP_USE_FIREBASE_ADAPTERS) {
+            RtdbProfileRemoteDataSource(firebaseDatabase?.reference)
+        } else {
+            NoopProfileRemoteDataSource()
+        }
+
+    @Provides
+    @Singleton
+    fun provideProfileRepository(
+        authGateway: AuthGateway,
+        profileRemoteDataSource: ProfileRemoteDataSource,
+    ): ProfileRepository = RealtimeProfileRepository(
+        authGateway = authGateway,
+        remoteDataSource = profileRemoteDataSource,
+    )
 
     @Provides
     @Singleton

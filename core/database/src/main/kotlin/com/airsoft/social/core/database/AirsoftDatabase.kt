@@ -6,12 +6,18 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [AppMetaEntity::class],
-    version = 1,
+    entities = [
+        AppMetaEntity::class,
+        ChatThreadEntity::class,
+        ChatMessageEntity::class,
+    ],
+    version = 2,
     exportSchema = false,
 )
 abstract class AirsoftDatabase : RoomDatabase() {
     abstract fun appMetaDao(): AppMetaDao
+    abstract fun chatsDao(): ChatsDao
+    abstract fun messagesDao(): MessagesDao
 
     companion object {
         fun build(context: Context): AirsoftDatabase =

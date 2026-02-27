@@ -1,4 +1,4 @@
-﻿package com.example.teamcompass
+package com.example.teamcompass
 
 import android.app.Application
 import android.content.ComponentCallbacks2

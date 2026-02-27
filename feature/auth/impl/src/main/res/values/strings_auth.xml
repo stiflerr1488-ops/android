@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auth_title">Вход</string>
+    <string name="auth_subtitle">Введите позывной. Регистрация по email понадобится только для чатов и публикаций.</string>
+    <string name="auth_upgrade_title">Регистрация аккаунта</string>
+    <string name="auth_upgrade_subtitle">Привяжите email, чтобы писать в чат и публиковать объявления.</string>
+    <string name="auth_brand_subtitle">ПОМОЩНИК</string>
+
+    <string name="auth_callsign_label">Позывной (3-16 символов)</string>
+    <string name="auth_email_label">Email (для регистрации)</string>
+
+    <string name="auth_button_register">Зарегистрироваться по email</string>
+    <string name="auth_button_open_registration">Войти/зарегистрироваться по email</string>
+    <string name="auth_button_upgrade">Привязать email к аккаунту</string>
+    <string name="auth_button_guest">Продолжить как гость</string>
+
+    <string name="auth_guest_hint">Гость может смотреть разделы и запускать радар, но не может писать и публиковать.</string>
+    <string name="auth_reason_registration_required">Для этой функции нужна регистрация по email.</string>
+
+    <string name="auth_error_invalid_callsign">Позывной должен быть от 3 до 16 символов.</string>
+    <string name="auth_error_invalid_email">Введите корректный email.</string>
+    <string name="auth_error_failed">Не удалось выполнить вход.</string>
+</resources>

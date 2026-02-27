@@ -16,7 +16,7 @@ data class TacticalOverviewSnapshot(
     val backendProvider: String = "legacy-firebase-bridge",
     val realtimeConnected: Boolean = false,
     val activeTeamId: String? = null,
-    val note: String = "Using legacy tactical mode via bridge while migration is in progress.",
+    val note: String = "Используется legacy tactical через bridge, пока миграция в процессе.",
 )
 
 interface TacticalOverviewPort {

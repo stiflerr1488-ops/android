@@ -7,9 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -28,34 +25,29 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.airsoft.social.core.tactical.TacticalOverviewPort
 import com.airsoft.social.core.ui.ComingSoonScreen
 import com.airsoft.social.feature.auth.impl.AuthPlaceholderScreen
-import com.airsoft.social.feature.chats.impl.ChatRoomSkeletonScreen
 import com.airsoft.social.feature.chats.impl.ChatsPlaceholderScreen
-import com.airsoft.social.feature.chats.impl.PlayerCardSkeletonScreen
-import com.airsoft.social.feature.events.impl.EventCreateEditSkeletonScreen
-import com.airsoft.social.feature.events.impl.EventDetailSkeletonScreen
 import com.airsoft.social.feature.events.impl.EventsPlaceholderScreen
-import com.airsoft.social.feature.marketplace.impl.MarketplaceCreateListingSkeletonScreen
-import com.airsoft.social.feature.marketplace.impl.MarketplaceListingDetailSkeletonScreen
 import com.airsoft.social.feature.marketplace.impl.MarketplacePlaceholderScreen
 import com.airsoft.social.feature.onboarding.impl.OnboardingPlaceholderScreen
-import com.airsoft.social.feature.profile.impl.EditProfileSkeletonScreen
-import com.airsoft.social.feature.profile.impl.ProfileInventorySkeletonScreen
+import com.airsoft.social.feature.profile.api.ProfileFeatureApi
+import com.airsoft.social.feature.profile.impl.EditProfileRoute
 import com.airsoft.social.feature.profile.impl.ProfilePlaceholderScreen
-import com.airsoft.social.feature.teams.impl.TeamCreateEditSkeletonScreen
-import com.airsoft.social.feature.teams.impl.TeamDetailSkeletonScreen
 import com.airsoft.social.feature.teams.impl.TeamsPlaceholderScreen
 import com.airsoft.social.feature.tactical.impl.TacticalBridgeRoute
 import kotlinx.coroutines.launch
+
+private const val SELF_USER_ID = "self"
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,7 +55,6 @@ fun AirsoftNavHost(
     bootstrapRoute: String,
     tacticalOverviewPort: TacticalOverviewPort,
     onCompleteOnboarding: () -> Unit,
-    onMockSignIn: () -> Unit,
     onSignOut: () -> Unit,
     onOpenLegacyTactical: () -> Unit,
     modifier: Modifier = Modifier,
@@ -75,8 +66,7 @@ fun AirsoftNavHost(
     val currentRoute = backStack?.destination?.route
 
     LaunchedEffect(bootstrapRoute) {
-        if (currentRoute == null) return@LaunchedEffect
-        if (currentRoute == bootstrapRoute) return@LaunchedEffect
+        if (currentRoute == null || currentRoute == bootstrapRoute) return@LaunchedEffect
         navController.navigate(bootstrapRoute) {
             popUpTo(navController.graph.findStartDestination().id) {
                 saveState = true
@@ -106,7 +96,7 @@ fun AirsoftNavHost(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp),
                     )
                     DrawerItem("Profile", "P") {
-                        navController.navigate(com.airsoft.social.feature.profile.api.ProfileFeatureApi.ROUTE)
+                        navController.navigate(ProfileFeatureApi.ROUTE)
                         scope.launch { drawerState.close() }
                     }
                     DrawerItem("Players / Chats", "C") {
@@ -117,7 +107,7 @@ fun AirsoftNavHost(
                         navController.navigate(com.airsoft.social.feature.teams.api.TeamsFeatureApi.ROUTE)
                         scope.launch { drawerState.close() }
                     }
-                    DrawerItem("Events / Tournaments", "E") {
+                    DrawerItem("Events", "E") {
                         navController.navigate(com.airsoft.social.feature.events.api.EventsFeatureApi.ROUTE)
                         scope.launch { drawerState.close() }
                     }
@@ -126,34 +116,9 @@ fun AirsoftNavHost(
                         scope.launch { drawerState.close() }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    DrawerItem("Settings", "S") {
-                        navController.navigate(AirsoftRoutes.Settings)
+                    DrawerItem("Tactical", "V") {
+                        navController.navigate(AirsoftRoutes.TacticalReserved)
                         scope.launch { drawerState.close() }
-                    }
-                    DrawerItem("Support", "?") {
-                        navController.navigate(AirsoftRoutes.Support)
-                        scope.launch { drawerState.close() }
-                    }
-                    DrawerItem("About", "i") {
-                        navController.navigate(AirsoftRoutes.About)
-                        scope.launch { drawerState.close() }
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    Button(
-                        onClick = {
-                            navController.navigate(AirsoftRoutes.TacticalReserved)
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF7A00),
-                            contentColor = Color(0xFF121212),
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                    ) {
-                        Text("V BOI!")
                     }
                 }
             }
@@ -167,14 +132,6 @@ fun AirsoftNavHost(
                     navigationIcon = {
                         TextButton(onClick = { scope.launch { drawerState.open() } }) {
                             Text("Menu")
-                        }
-                    },
-                    actions = {
-                        TextButton(onClick = { navController.navigate(AirsoftRoutes.Search) }) {
-                            Text("Search")
-                        }
-                        TextButton(onClick = { navController.navigate(AirsoftRoutes.Notifications) }) {
-                            Text("Inbox")
                         }
                     },
                 )
@@ -213,25 +170,6 @@ fun AirsoftNavHost(
                         body = "Bootstrap placeholder for the new app shell.",
                     )
                 }
-                composable(AirsoftRoutes.Notifications) {
-                    NotificationsShellRoute()
-                }
-                composable(AirsoftRoutes.Search) {
-                    SearchShellRoute(
-                        onOpenPlayers = {
-                            navController.navigate(com.airsoft.social.feature.chats.api.ChatsFeatureApi.ROUTE)
-                        },
-                        onOpenTeams = {
-                            navController.navigate(com.airsoft.social.feature.teams.api.TeamsFeatureApi.ROUTE)
-                        },
-                        onOpenEvents = {
-                            navController.navigate(com.airsoft.social.feature.events.api.EventsFeatureApi.ROUTE)
-                        },
-                        onOpenMarketplace = {
-                            navController.navigate(com.airsoft.social.feature.marketplace.api.MarketplaceFeatureApi.ROUTE)
-                        },
-                    )
-                }
                 composable(AirsoftRoutes.onboardingRoute) {
                     OnboardingPlaceholderScreen(
                         onPrimaryAction = {
@@ -245,8 +183,7 @@ fun AirsoftNavHost(
                 }
                 composable(AirsoftRoutes.authRoute) {
                     AuthPlaceholderScreen(
-                        onPrimaryAction = {
-                            onMockSignIn()
+                        onAuthenticated = {
                             navController.navigate(AirsoftRoutes.topLevelDestinations.first().route) {
                                 popUpTo(AirsoftRoutes.authRoute) { inclusive = true }
                                 launchSingleTop = true
@@ -255,38 +192,26 @@ fun AirsoftNavHost(
                     )
                 }
                 composable(com.airsoft.social.feature.chats.api.ChatsFeatureApi.ROUTE) {
-                    ChatsPlaceholderScreen(
-                        onOpenChatRoomDemo = { navController.navigate(AirsoftRoutes.ChatRoomDemo) },
-                        onOpenPlayerCardDemo = { navController.navigate(AirsoftRoutes.PlayerCardDemo) },
-                    )
+                    ChatsPlaceholderScreen()
                 }
                 composable(com.airsoft.social.feature.teams.api.TeamsFeatureApi.ROUTE) {
-                    TeamsPlaceholderScreen(
-                        onOpenTeamDetailDemo = { navController.navigate(AirsoftRoutes.TeamDetailDemo) },
-                        onOpenTeamCreateDemo = { navController.navigate(AirsoftRoutes.TeamCreateDemo) },
-                    )
+                    TeamsPlaceholderScreen()
                 }
                 composable(com.airsoft.social.feature.events.api.EventsFeatureApi.ROUTE) {
-                    EventsPlaceholderScreen(
-                        onOpenEventDetailDemo = { navController.navigate(AirsoftRoutes.EventDetailDemo) },
-                        onOpenEventCreateDemo = { navController.navigate(AirsoftRoutes.EventCreateDemo) },
-                    )
+                    EventsPlaceholderScreen()
                 }
                 composable(com.airsoft.social.feature.marketplace.api.MarketplaceFeatureApi.ROUTE) {
-                    MarketplacePlaceholderScreen(
-                        onOpenListingDetailDemo = {
-                            navController.navigate(AirsoftRoutes.MarketplaceListingDetailDemo)
-                        },
-                        onOpenCreateListingDemo = {
-                            navController.navigate(AirsoftRoutes.MarketplaceCreateListingDemo)
-                        },
-                    )
+                    MarketplacePlaceholderScreen()
                 }
-                composable(com.airsoft.social.feature.profile.api.ProfileFeatureApi.ROUTE) {
+                composable(ProfileFeatureApi.ROUTE) {
                     ProfilePlaceholderScreen(
-                        onOpenEditProfileDemo = { navController.navigate(AirsoftRoutes.ProfileEditDemo) },
-                        onOpenInventoryDemo = { navController.navigate(AirsoftRoutes.ProfileInventoryDemo) },
-                        onPrimaryAction = {
+                        onOpenEditProfile = { userId ->
+                            navController.navigate(ProfileFeatureApi.profileEditRoute(userId))
+                        },
+                        onOpenPrivacySettings = { userId ->
+                            navController.navigate(ProfileFeatureApi.profileEditRoute(userId))
+                        },
+                        onSignOut = {
                             onSignOut()
                             navController.navigate(AirsoftRoutes.authRoute) {
                                 popUpTo(navController.graph.findStartDestination().id) { inclusive = false }
@@ -295,34 +220,22 @@ fun AirsoftNavHost(
                         },
                     )
                 }
-                composable(AirsoftRoutes.Settings) {
-                    SettingsShellRoute(
-                        onOpenSupport = { navController.navigate(AirsoftRoutes.Support) },
-                        onOpenAbout = { navController.navigate(AirsoftRoutes.About) },
+                composable(
+                    route = ProfileFeatureApi.ProfileEditRoutePattern,
+                    arguments = listOf(
+                        navArgument(ProfileFeatureApi.USER_ID_ARG) {
+                            type = NavType.StringType
+                            defaultValue = SELF_USER_ID
+                        },
+                    ),
+                ) { entry ->
+                    val userId = entry.arguments?.getString(ProfileFeatureApi.USER_ID_ARG) ?: SELF_USER_ID
+                    EditProfileRoute(
+                        userId = userId,
+                        onSaved = { navController.popBackStack() },
+                        onCancel = { navController.popBackStack() },
                     )
                 }
-                composable(AirsoftRoutes.Support) {
-                    SupportShellRoute(
-                        onOpenNotifications = { navController.navigate(AirsoftRoutes.Notifications) },
-                    )
-                }
-                composable(AirsoftRoutes.About) {
-                    AboutShellRoute()
-                }
-                composable(AirsoftRoutes.ChatRoomDemo) { ChatRoomSkeletonScreen() }
-                composable(AirsoftRoutes.PlayerCardDemo) { PlayerCardSkeletonScreen() }
-                composable(AirsoftRoutes.TeamDetailDemo) { TeamDetailSkeletonScreen() }
-                composable(AirsoftRoutes.TeamCreateDemo) { TeamCreateEditSkeletonScreen() }
-                composable(AirsoftRoutes.EventDetailDemo) { EventDetailSkeletonScreen() }
-                composable(AirsoftRoutes.EventCreateDemo) { EventCreateEditSkeletonScreen() }
-                composable(AirsoftRoutes.MarketplaceListingDetailDemo) {
-                    MarketplaceListingDetailSkeletonScreen()
-                }
-                composable(AirsoftRoutes.MarketplaceCreateListingDemo) {
-                    MarketplaceCreateListingSkeletonScreen()
-                }
-                composable(AirsoftRoutes.ProfileEditDemo) { EditProfileSkeletonScreen() }
-                composable(AirsoftRoutes.ProfileInventoryDemo) { ProfileInventorySkeletonScreen() }
                 composable(AirsoftRoutes.TacticalReserved) {
                     TacticalBridgeRoute(
                         tacticalOverviewPort = tacticalOverviewPort,
